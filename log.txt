@@ -819,3 +819,22 @@ branch=main
 repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-24T14:27:28Z] Diagnostic: exactness of fully linked dev cases
+
+User Prompt (verbatim, secrets redacted):
+[Pasted advice, no user text] Advice to submit a safe version first. Asks: (1) how many dev cases have zero missed or extra resources, and how many of those are exact; (2) how many hours are left; and whether to take the safe path first (2-invalid-rows fix, three custom test cases, reports, packaging), then accuracy work.
+
+Agent Response Summary:
+Read-only diagnostic on dev-22 with the current pipeline. 9 dev cases have zero missed and zero extra resources, and 8 of those are exact. The ninth is a state error: a resource predicted compliant that gold reports as a remaining record. Across all dev cases, 46 of 48 correctly found resources have exactly the right steps, and 29 of 31 cited steps have the right evidence_id. So the 0.79 evidence_id field accuracy comes mostly from position shifts caused by missing resources, not wrong citations. All 13 non-exact cases with linking errors miss at least one resource. Deadline not configured in the repo, so hours left were not stated; the order decision was left to the user.
+
+Actions:
+* ran read-only python diagnostics over sample predictions vs sample_output (dev split only)
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
