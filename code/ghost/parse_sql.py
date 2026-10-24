@@ -1,0 +1,95 @@
+"""SQL snapshot dumps -> units, one per row.
+
+Each dump is executed into a fresh in-memory SQLite database; the file on
+disk is only read. Tables with a record_json column carry origin_system and
+collection_name; plain tables are categorized by table name. A table (or a
+file whose header says so) with "replica" in its name is copy=replica, one
+with "primary" is copy=primary. snapshot_scope rows are coverage metadata,
+not records: they only produce a resource-less unit for an in-scope table
+that has no rows (a covering snapshot that lacks the record).
+"""
+import json
+import re
+import sqlite3
+
+from . import parse_common as pc
+
+TOPOLOGY = re.compile(r"^-- Database topology:\s*(\S+)", re.M)
+SKIP_TABLES = {"snapshot_scope"}
+# Inventory tables -> owning system, to match snapshot_scope.origin_system.
+TABLE_SYSTEMS = {
+    "customer_profiles": "account_service", "customer_search_documents": "search_service",
+    "customer_analytics_profiles": "analytics_platform", "support_records": "support_platform",
+    "customer_exports": "export_service", "connector_subscriptions": "integration_service",
+    "backup_restore_entries": "backup_service", "security_audit_records": "security_service",
+}
+
+
+def _copy(table, topology):
+    if "replica" in table:
+        return "replica"
+    if "primary" in table:
+        return "primary"
+    if topology and "replica" in topology and topology != "primary_only":
+        return "replica"
+    return "unknown"
+
+
+def _table_category(table):
+    name = re.sub(r"_(primary|failover_replica|read_replica|reporting_replica|replica(_\w+)?)$",
+                  "", table)
+    return pc.CATEGORY_BY_COLLECTION.get(name, "")
+
+
+def parse_sql(path):
+    script = path.read_text(encoding="utf-8")
+    top = TOPOLOGY.search(script)
+    topology = top.group(1) if top else ""
+    con = sqlite3.connect(":memory:")
+    try:
+        con.executescript(script)
+        tables = [t for (t,) in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        scope = {}
+        if "snapshot_scope" in tables:
+            scope = dict(con.execute("SELECT origin_system, captured_at FROM snapshot_scope"))
+        out = []
+        for table in tables:
+            if table in SKIP_TABLES:
+                continue
+            cur = con.execute(f'SELECT * FROM "{table}" ORDER BY rowid')
+            cols = [d[0] for d in cur.description]
+            copy = _copy(table, topology)
+            rows = cur.fetchall()
+            for row in rows:
+                out += _row_units(table, dict(zip(cols, row)), copy)
+            system = TABLE_SYSTEMS.get(table)
+            if not rows and system in scope:
+                out.append(pc.make_unit(
+                    system_id=system, resource_id="", category_hint=_table_category(table),
+                    state="", text=f"snapshot_scope {system} {scope[system]}: {table} has 0 rows",
+                    copy=copy, event_time=scope[system]))
+        return out
+    finally:
+        con.close()
+
+
+def _row_units(table, row, copy):
+    if "record_json" in row:
+        rec = json.loads(row["record_json"])
+        fields = dict(rec)
+        cat = rec.get("record_type") if rec.get("record_type") in pc.CATEGORIES else \
+            pc.CATEGORY_BY_COLLECTION.get(row.get("collection_name", ""), "")
+        fallback = row.get("origin_system", "")
+    else:
+        fields = row
+        cat = _table_category(table)
+        fallback = ""
+    rid = str(row.get("resource_id") or fields.get("resource_id") or "")
+    text = table + " " + json.dumps(row, sort_keys=True, ensure_ascii=False)
+    system = fields.get("system") or row.get("origin_system") or pc.system_for(rid, fallback)
+    event_time = row.get("updated_at") or row.get("indexed_at") or fields.get("recorded_at") or ""
+    unit = pc.make_unit(system_id=system, resource_id=rid, category_hint=cat,
+                        state=pc.infer_state(fields, cat), text=text, copy=copy,
+                        event_time=event_time)
+    return [unit] + pc.reference_units(text, [rid], copy=copy, event_time=event_time)
