@@ -767,3 +767,22 @@ branch=main
 repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-24T14:10:06Z] Structure-only answers for linking-fix design (dev cases only)
+
+User Prompt (verbatim, secrets redacted):
+[Pasted request, structure only, no PII] 1. Columns of system_activity.csv and any column that could group one user's actions (job/batch/request/actor ID). 2. Failover replica 20260902 table/column names and row counts per table. 3. For the 5 dev gold resources present in evidence but matching no identifier: unit kind, field names, which user identifiers are missing. 4. One anonymized worked example (e.g. case_03): gold resources, linked vs missed, where each missed one shows up. Not needed: full report, dataset files, held-out 10, screenshots.
+
+Agent Response Summary:
+Read-only diagnostics, no pipeline changes. system_activity.csv has 8 columns and no job/batch/request/actor ID; details contain only resource ids (plus the downstream id in "repopulated" rows and email/user_id in LINK_RESOURCE_IDENTITY rows). Measured two more grouping proxies on dev-22: worker-row time proximity (±2 min: 2 recovered, 4 extra) and activity_id adjacency (±1: 4 recovered, 38 extra), both far below 0.95 precision. The 5 "in evidence, no identifier match" resources are all compliant units (ANONYMIZED/ABSENT, identifiers nulled) except account_006, which appears only as source_resource_id inside a linked search row (REFERENCED rows never link by design). Reported with placeholders only; held-out cases untouched.
+
+Actions:
+* ran read-only python/sqlite inspections of system_activity.csv, the failover SQL, evidence_56/57/92/94 and the sample pipeline trace
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
