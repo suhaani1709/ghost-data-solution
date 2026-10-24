@@ -622,3 +622,79 @@ branch=main
 repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-24T13:52:28Z] Crude end-to-end baseline: linking v0, state, main, eval scripts
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first and follow its logging rules (per-turn entries in log.txt).
+Read code/NOTES.md. Reuse code/ghost/ (loaders, identity, intent, planner,
+observations). Do not re-read dataset files except sample_output.csv and
+deletion_requests.csv when needed.
+
+GOAL: crude end-to-end baseline. Speed over polish. Write code/ghost/linking.py,
+code/ghost/state.py, code/main.py. Tests first for the pieces that can be tested
+(see below).
+
+linking.py (v0, exact matching only):
+- A resource links to a user if an observation (evidence unit) containing that
+  resource also contains any identifier in the user's IdentitySet (user_id,
+  every current/old email, SHA-256 of every email, phone, name where the unit is
+  clearly the person's).
+- Only use observations from files with captured_at <= the case's audit_at.
+- Linking is sticky: once linked by evidence <= audit_at, the resource stays
+  relevant even if later observations have nulled identifiers.
+- REFERENCED rows and activity-only resources must NOT create links by
+  themselves (activity rows are claims, not evidence).
+
+state.py:
+- State of a resource at audit_at = state of the latest file with
+  captured_at <= audit_at that has a stateful observation of it.
+- If any copy (primary or replica) shows it PRESENT, it is PRESENT.
+- Absence: an ABSENT/NOT_FOUND observation, or a coverage row of a snapshot that
+  covers the system but lacks the resource, counts as ABSENT. Cite that snapshot.
+- Citation = the evidence file chosen by that rule (see NOTES.md).
+
+category: take category_hint from the observation; if empty, fall back to a
+system_id table and COUNT every fallback.
+
+main.py:
+- For each of the 518 cases: effective_intent -> NOT_APPLICABLE with [] or
+  resolve identity -> link -> state -> category -> planner.build_steps.
+- Write output.csv at the repo root.
+- Skip PNG-derived evidence for now.
+
+Run, in this order, and show only compact results:
+1. python3 code/evaluation/validate.py output.csv
+2. python3 code/evaluation/score.py on the 32 samples
+3. Linkage recall and precision against the gold resources in sample_output.csv
+4. The planner oracle test again (must still pass)
+
+Then print a FAILURE BREAKDOWN without fixing anything:
+- status accuracy and confusion matrix
+- linkage: for each of the first 22 sample cases (sorted by case_id), list
+  gold resources MISSED and resources EXTRA, as counts per case plus the 5 worst
+  case_ids. For the other 10 sample cases, print aggregate numbers only (held-out
+  set, do not analyze them further)
+- the 5 most common failure types, each with one example case_id and the owning
+  layer (linking / state / category / citation / ordering)
+- how many category fallbacks were used
+
+RULES: stdlib + pandas only, no installs, no edits to dataset/, no hard-coded
+case_ids, no paid model calls, no per-case special handling. Show compact output,
+then stop.
+
+Agent Response Summary:
+Wrote tests first: code/tests/test_linking_state.py has 9 synthetic tests and was red before the code existed. Then implemented linking.py (exact token index; captured_at <= audit_at; sticky; REFERENCED rows and activity never link; names not used), state.py (latest file wins; any copy PRESENT wins; coverage rows count as ABSENT; category hint, else a counted system fallback; planner_state vocabulary mapping), and main.py. Also created the missing code/evaluation/validate.py, score.py and breakdown.py. Results: validate fails on 9 COMPLETE rows with empty steps (not fixed), samples status 31/32, step F1 0.862, linkage recall 0.685 and precision 0.987, planner oracle 4/4 OK. Dominant failure is linking: gold resources known only from activity rows, absence proven by non-empty covering SQL snapshots. No fixes applied, as instructed.
+
+Actions:
+* created code/tests/test_linking_state.py, code/ghost/linking.py, code/ghost/state.py, code/main.py
+* created code/evaluation/validate.py, code/evaluation/score.py, code/evaluation/breakdown.py
+* ran python3 code/main.py (wrote output.csv), validate.py, score.py, breakdown.py, test_planner_oracle.py, test_linking_state.py
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
