@@ -9,6 +9,7 @@ user-number pattern only breaks ties among survivors; still ambiguous -> None.
 Run:  python3 code/tests/test_account_finder.py
 All inputs here are synthetic; no dataset content.
 """
+import dataclasses
 import sys
 import unittest
 from pathlib import Path
@@ -89,6 +90,57 @@ class AccountFinderTest(unittest.TestCase):
     def test_needs_account_only_when_none_linked(self):
         self.assertTrue(account_finder.needs_account({("search_service", "search_1"): ["f1"]}))
         self.assertFalse(account_finder.needs_account({("account_service", "account_1"): ["f1"]}))
+
+
+
+def ident(n):
+    return dataclasses.replace(IDENT, user_id=f"user_{n}")
+
+
+def pool_case(case_id, n, account=None, reported=REPORTED):
+    return account_finder.PoolCase(case_id, ident(n), reported, AUDIT, account)
+
+
+class PropagationTest(unittest.TestCase):
+    def setUp(self):
+        self.rows = [act("a1", "2026-05-01T11:20:00Z", "account_40"),
+                     act("a2", "2026-05-01T11:30:00Z", "account_41"),
+                     act("a3", "2026-05-01T11:40:00Z", "account_42")]
+        self.finder = account_finder.AccountFinder(frame(), activity(*self.rows))
+
+    def test_taken_accounts_leave_other_pools_round_by_round(self):
+        # c1's only candidate (in its own window) is account_40; c2 then has account_41 left.
+        early = "2026-05-01T11:25:00Z"     # window of c1 covers 10:10-11:35 -> account_40, account_41
+        cases = [pool_case("c0", 50, account="account_41"),            # linked by evidence
+                 pool_case("c1", 51, reported=early),
+                 pool_case("c2", 52)]
+        picks, rounds = account_finder.propagate(cases, self.finder)
+        self.assertEqual(picks, {"c1": ("account_40", "a1"), "c2": ("account_42", "a3")})
+        self.assertEqual([sorted(r) for r in rounds], [["c1"], ["c2"]])
+
+    def test_same_round_conflict_between_users_picks_nothing(self):
+        f = account_finder.AccountFinder(frame(), activity(self.rows[0]))
+        picks, _ = account_finder.propagate([pool_case("c1", 51), pool_case("c2", 52)], f)
+        self.assertEqual(picks, {})
+
+    def test_same_user_may_share_its_account(self):
+        f = account_finder.AccountFinder(frame(), activity(self.rows[0]))
+        picks, _ = account_finder.propagate([pool_case("c1", 51), pool_case("c2", 51)], f)
+        self.assertEqual(picks, {"c1": ("account_40", "a1"), "c2": ("account_40", "a1")})
+
+    def test_still_ambiguous_stays_unpicked(self):
+        picks, rounds = account_finder.propagate([pool_case("c1", 51)], self.finder)
+        self.assertEqual((picks, rounds), ({}, []))
+
+    def test_rank_closest_to_reported_then_user_number(self):
+        rows = [act("a1", "2026-05-01T11:20:00Z", "account_40"),
+                act("a2", "2026-05-01T11:50:00Z", "account_41"),
+                act("a3", "2026-05-01T12:10:00Z", "account_7")]
+        f = account_finder.AccountFinder(frame(), activity(*rows))
+        ranked = f.rank(f.survivors(IDENT, REPORTED, AUDIT), "user_7")
+        self.assertEqual([r for r, _ in ranked], ["account_7", "account_41", "account_40"])
+        self.assertEqual([m for _, m in ranked], [10.0, 10.0, 40.0])
+        self.assertEqual(f.rank(f.survivors(IDENT, REPORTED, AUDIT), "user_41")[0][0], "account_41")
 
 
 if __name__ == "__main__":

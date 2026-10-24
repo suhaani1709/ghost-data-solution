@@ -85,6 +85,8 @@ zip -r code.zip README.md code evaluation -x "*/__pycache__/*" "*/.venv/*" "*/ve
 
 This is the command from "Packaging `code.zip`" below, with `evaluation` added as that section allows
 for a top-level `evaluation/` directory.
+Delete any old `code.zip` first (`rm -f code.zip`): `zip -r` adds and updates entries but never removes
+files that no longer exist.
 
 ---
 

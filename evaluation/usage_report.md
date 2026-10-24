@@ -33,5 +33,7 @@ The run takes about 4 seconds on a laptop CPU.
 
 **Development token counts and cost: not reported.** We did not measure the tokens or cost of the
 development sessions, including the screenshot transcription, per task. Any number here would be a
-guess. The raw session traces, which hold per-message usage, are submitted separately in `agent-trace.zip`.
+guess. The raw session traces, which hold per-message usage, are to be submitted separately as
+`agent-trace.zip`. The participant assembles it after the last session, following `agent_trace_instructions.md`;
+it did not exist yet when this report was written.
 The challenge asks for the usage of the final run, and that is exactly zero.

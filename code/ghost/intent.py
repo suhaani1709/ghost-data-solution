@@ -101,6 +101,23 @@ FOLLOW_UPS = {
     "I still use it, so please don't delete or change anything.": NON_DELETE,
 }
 
+# Sentences that explicitly refuse deletion (after normalize()). Used only for texts the
+# strict tables cannot label: an UNKNOWN text containing one is NON_DELETE, not DELETE.
+# Own case (a) phrasing and its variants, plus the explicit refusals among the
+# non-deletion follow-ups above.
+NEGATIONS = {
+    "Please do not delete my account.", "Please don't delete my account.",
+    "Do not delete my account.", "Don't delete my account.",
+    "Please do not delete this account.", "Please don't delete this account.",
+    "I do not want my account deleted.", "I don't want my account deleted.",
+    "I do not want to delete my account.", "I don't want to delete my account.",
+    "Please do not close my account.", "Please don't close my account.",
+    "Do not close the account.",
+    "I still need the account and my order history, so I am not asking for deletion.",
+    "This is an information request, not a request to erase it.",
+    "I still use it, so please don't delete or change anything.",
+}
+
 _QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 # Latin terminators need following whitespace; CJK terminators need none.
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])\s*")
@@ -148,15 +165,22 @@ def classify_requests(requests):
     return labels, unknown
 
 
-def effective_intent(text):
+def effective_intent(text, warn=True):
     """DELETE or NON_DELETE for the pipeline. The strict classify() is unchanged.
 
+    UNKNOWN that contains an explicit refusal (NEGATIONS) is NON_DELETE. Other
     UNKNOWN falls back to DELETE (every deletion-request channel in the data is
-    a deletion intake; all 32 samples are deletions) and logs a warning so the
+    a deletion intake; all 32 samples are deletions). Both log a warning so the
     text can be reviewed and added to the tables.
     """
     label, reason = classify(text)
     if label == UNKNOWN:
-        log.warning("intent UNKNOWN, defaulting to DELETE: %s", reason)
+        refusal = next((s for s in split_sentences(text) if s in NEGATIONS), None)
+        if refusal is not None:
+            if warn:
+                log.warning("intent UNKNOWN but negates deletion (%r), NON_DELETE: %s", refusal, reason)
+            return NON_DELETE
+        if warn:
+            log.warning("intent UNKNOWN, defaulting to DELETE: %s", reason)
         return DELETE
     return label

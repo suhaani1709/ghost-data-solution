@@ -1,7 +1,7 @@
 # Evaluation report: Ghost Data Still Exists deletion-audit agent
 
 Every number below comes from running the scripts named next to it on the final code
-(including the session-4 account finder, see section 9) on 2026-10-25. Nothing is estimated.
+(including the session-4/5 account finder and the session-5 negation fix, see section 9) on 2026-10-25. Nothing is estimated.
 Where a number is plain arithmetic on measured counts (for example a ceiling), the arithmetic is shown.
 
 Reproduce:
@@ -17,7 +17,11 @@ python3 code/evaluation/validate.py output.csv
 
 **Splits.** The 32 public samples (`dataset/sample_output.csv`) are the only labelled data.
 `score.py` sorts them by `case_id`: the first 22 are **dev** and the last 10 are **held-out**.
-Held-out cases were looked at only in aggregate. Section 4 says which rules came from dev.
+Held-out cases were looked at only in aggregate. They were not entirely untouched, though. Held-out aggregates
+were also used as a no-regression gate for kept changes ("revert any change that lowers a dev or held-out
+metric", sessions 2 and 5). The one-account-per-case premise of the account finder counts accounts in all 32
+sample answers. No change was rejected because of held-out, since held-out never decreased in any config
+(section 9). Section 4 says which rules came from dev.
 
 **Metric definitions** (`code/evaluation/score.py`):
 - *status accuracy*: `deletion_status` equal to the gold status.
@@ -86,10 +90,14 @@ from a missing or extra resource, not from ordering.
 | Zero-link rule (no linked resource → COMPLETE `[]`) | problem_statement.md; the 3 **dev** zero-link cases have gold COMPLETE | measured: no held-out change |
 | Account finder: one account per case; window −75/+10 min around reported_at | all 32 samples have exactly one account (count only); window from **dev** delete timings | measured: held-out +1 account, 0 wrong |
 | Inventory-table coverage (SQL dump without snapshot_scope proves absence) | **dev**: gold cites such a dump as proof that a found account is absent | measured: no held-out change alone |
+| Account propagation (an account belongs to one user; taken accounts leave other pools) | uniqueness of ownership; checked on **dev** (no change there) | measured: no held-out change |
+| Intent negation table (UNKNOWN + explicit refusal → NON_DELETE) | own case (a) and its phrasing variants; no sample or 518 text affected | n/a |
 
 Before session 4, none of the dev-derived rules changed a held-out metric. The account finder adds one
-correct held-out account (R 0.736 → 0.750). The held-out score is otherwise the baseline linker's score. It is an honest out-of-sample number for linking, but not for planner
-conventions, which every sample informed.
+correct held-out account (R 0.736 → 0.750). The held-out score is otherwise the baseline linker's score. It is the closest thing we have to an
+out-of-sample number for linking, but it is not strictly untouched: held-out aggregates served as a
+no-regression gate, and the one-account premise counts all 32 samples. It is not out-of-sample for
+planner conventions either, because every sample informed them.
 
 ## 5. Own evaluation cases (4 cases, built by us)
 
@@ -101,14 +109,14 @@ from the rules and written down before the pipeline was run on the case.** `data
 
 | case | what it tests | expected (hand-derived) | pipeline | result |
 |---|---|---|---|---|
-| a_do_not_delete | "Please do not delete my account. I still use it every week." with a live profile row in evidence | `NOT_APPLICABLE`, `[]` | `INCOMPLETE`, 3 steps (report / delete / verify account_9001) | **FAIL** |
+| a_do_not_delete | "Please do not delete my account. I still use it every week." with a live profile row in evidence | `NOT_APPLICABLE`, `[]` | before session 5: `INCOMPLETE`, 3 steps (report / delete / verify account_9001). Now: `NOT_APPLICABLE`, `[]` | **FAIL → PASS** (session 5) |
 | b_lookalike_decoy | the real profile is deleted (empty covering snapshot); same-name search doc with `ada.quill@exarnple.com`; analytics row with SHA-256 of `ada.quil@example.com` | `COMPLETE`, 1 step: VERIFY_RECORD_ABSENT account_9001 cited to evidence_b2 | identical | **PASS** |
 | c_replica_holds_row | primary table lacks the row, failover replica table holds it; activity claims DELETE SUCCESS | `INCOMPLETE`: REPORT_REMAINING_RECORD (evidence_c1) → DELETE_RECORD → VERIFY_RECORD_ABSENT | identical | **PASS** |
 | d_old_email_hash_only | request uses a historical email (audit log); the only evidence is a search hit whose `correlation_key` is SHA-256 of that old email | `INCOMPLETE`: REPORT_REMAINING_RECORD search_9301 (evidence_d1) → DELETE_RECORD → VERIFY_RECORD_ABSENT | identical | **PASS** |
 
-**3 of 4 pass.**
+**4 of 4 pass** (3 of 4 before the session-5 negation fix).
 
-**Finding from case (a), not fixed.** The intent classifier accepts a text only if every sentence is in
+**Finding from case (a), fixed in session 5** (see section 9). The original finding: The intent classifier accepts a text only if every sentence is in
 its tables. "Please do not delete my account." is not in them, so the text is `UNKNOWN`, and
 `intent.effective_intent` maps `UNKNOWN` to `DELETE`, logging the warning
 `intent UNKNOWN, defaulting to DELETE`. The refusal is then audited as a deletion. This default was chosen because all 518
@@ -118,6 +126,12 @@ evaluation set the default changes nothing. On unseen text it fails open toward 
 the unsafe direction for a "do not delete" request. Possible fixes, all untested: default UNKNOWN to
 NOT_APPLICABLE when the text contains a negated deletion verb, or route UNKNOWN texts to review.
 Either one would need re-measuring on the 23 unknown sample openings, which are all deletions.
+
+**Fix (session 5):** `intent.NEGATIONS` is a table of explicit refusals: the case (a) phrasing, its
+variants, and the refusals among the non-deletion follow-ups. The strict classifier is unchanged. An UNKNOWN
+text containing a refusal is NON_DELETE (logged), and any other UNKNOWN text keeps the DELETE default
+(logged). Measured: all 518 intents unchanged (508 DELETE / 10 NON_DELETE, 0 UNKNOWN), all 32 sample intents
+unchanged (all DELETE), and own case (a) now passes. Tests: `code/tests/test_intent_negation.py`.
 
 ## 6. Failure analysis
 
@@ -149,7 +163,8 @@ Why there is a recall ceiling:
    `source_resource_id` inside a linked record. The rest have no exact link left.
 
 Other known failures:
-- Case (a) above: intent fails open on unseen text.
+- Case (a) above: intent failed open on unseen text. Fixed in session 5 for explicit refusals; other unseen
+  text still defaults to DELETE.
 - **Zero-link rows:** 2 of the 518 output rows are COMPLETE with `[]` (zero-link rule). problem_statement.md
   allows them, so `validate.py` now reports them as a warning, not an error. They are COMPLETE because
   no evidence shows a remaining copy. The gold answer may still list verification steps we cannot cite.
@@ -181,6 +196,12 @@ Also rejected:
   case (13 gold in 32 cases). Window −75/+10 min around reported_at: dev 2 recovered, 3 wrong,
   **precision 0.400**; held-out 0 recovered, 1 wrong. Window −30/0: same numbers. Anchored on the
   account's own delete, ±10 min: dev 0 picks; ±30 min: dev 0 recovered, 1 wrong. Rejected.
+- **Forced account pick** (session 5, measured only, not enabled). For cases still ambiguous after
+  propagation (≥ 2 candidates), pick the delete closest to reported_at, with the user number as tie-break.
+  The dev gold account is among the candidates in 5/5 such cases, but the top pick is right in only 2.
+  By minimum margin between the first and second candidate: ≥0 min dev 2/3 (0.400), held 2/6, 287 rows of
+  the 518; ≥2 min 2/2 (0.500), 279 rows; ≥5 min 2/2 (0.500), 260 rows; ≥10 min 2/2 (0.500), held 1/1, 169 rows;
+  ≥20 min 1/2 (0.333), 32 rows; ≥30 min no dev case, 11 rows. Never near 0.95, so it stays off.
 - **Same-batch idea for security audit records:** not possible. The deletion worker never acts on
   security_service (no activity row targets it), consistent with rule_12 RETAIN.
 - **Account finder with a strictly-before window (−75/0):** dev 2 recovered, 0 wrong, 9 abstained.
@@ -213,6 +234,7 @@ Also rejected:
 | 84fe0de | replica drift, activity category, zero-link rule | **1.000** | **0.920** | **0.409** | 0.848 | 0.000 | 2 | 0 |
 | session 3 | validator warning, PDF fallback, own cases, docs | 1.000 | 0.920 | 0.409 | 0.848 | 0.000 | 2 (warnings) | 0 |
 | session 4 | account finder + inventory-table coverage | **1.000** | **0.944** | **0.636** | **0.857** | 0.000 | 2 (warnings) | 36 |
+| session 5 | account propagation + intent negation table | 1.000 | 0.944 | 0.636 | 0.857 | 0.000 | 2 (warnings) | 45 (9 more than session 4) |
 
 **Per option** (`compare.py`, final code with options toggled):
 
@@ -236,6 +258,28 @@ F1 0.848, exact 0.000, linkR 0.630, linkP 1.000. With the account finder: R 0.75
 linkP 1.000 (1 recovered, 0 extra). The planner oracle is 4/4 in every config.
 Images change no sample score. In the 518-case run, the final config with `images=False` has 9
 empty-COMPLETE rows and with `images=True` it has 2. At commit level, 9 rows changed (commit table).
+
+**Session 6 (review fixes, no output change):**
+- Without pdftotext, the test suite had 1 error: a test helper called the PDF reader without a file id, so
+  the committed-text fallback could not be found. Fixed, with a regression test. 113 tests now pass with and
+  without pdftotext (3 skipped without it). 0 of 518 rows changed, and every metric is unchanged.
+- The split description now states that held-out aggregates were a no-regression gate and that the
+  one-account premise counts all 32 samples.
+
+**Session 5 (propagation, forced pick, negation):**
+- Constraint propagation (`account_finder.propagate`, default on). An account belongs to one user. The pool is every
+  deletion request in `dataset/` (518 + 32 samples, no shared case_ids). Accounts that evidence links to a request's
+  user start as taken. Each round decides every unresolved request on its remaining candidates, with the same
+  single-survivor / user-number rule. If two users pick the same account in one round, neither gets it. Picks are
+  final.
+  Rounds resolve 48, 2 and 1 requests; requests still needing an account go 362 → 314 → 312 → 311.
+  Dev picks: 5 correct, 0 wrong, precision 1.000 in every round (same as the kept finder). Held-out: 1 / 0.
+  518 picks 36 → 42 → 44 → 45. No sample metric changes, so the 9 extra 518 picks are untested on labels.
+  Kept under the rule (dev precision ≥ 0.95, no regression).
+- After propagation, 311 requests remain without an account: 300 with ≥ 2 candidates and 11 with none
+  (287 and 10 of them in the 518).
+- 518-case run: 9 rows change, each only by adding one account (6 INCOMPLETE and 3 COMPLETE; no status flip,
+  nothing lost). VALID, 0 invalid, 2 warnings, deterministic. 112 tests pass.
 
 **Session 4 (account finder):**
 - Rule (`code/ghost/account_finder.py`, tests `code/tests/test_account_finder.py`): every case has exactly one
@@ -264,5 +308,5 @@ empty-COMPLETE rows and with `images=True` it has 2. At commit level, 9 rows cha
 ## 10. Final 518-case output checks
 
 `python3 code/main.py`: INCOMPLETE 356, COMPLETE 152, NOT_APPLICABLE 10. Steps per case: min 0,
-median 6, max 14, total 2727. Accounts found by the finder 36, category fallbacks 0, state coercions 0. `validate.py`: VALID, 0 invalid
+median 6, max 14, total 2736. Accounts found by the finder (with propagation) 45, category fallbacks 0, state coercions 0. `validate.py`: VALID, 0 invalid
 rows, 2 warnings (zero-link COMPLETE `[]`). Two runs are byte-identical, and so are runs with and without pdftotext.

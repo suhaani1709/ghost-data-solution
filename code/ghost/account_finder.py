@@ -21,6 +21,7 @@ The same finder runs for another system and worker operation by parameter
 sample; other systems must be measured before use.
 """
 import re
+from collections import namedtuple
 
 import pandas as pd
 
@@ -63,20 +64,86 @@ class AccountFinder:
     def _tied_elsewhere(self, resource_id, mine, cutoff):
         return any(t <= cutoff and tokens - mine for t, tokens in self._tokens.get(resource_id, ()))
 
-    def find(self, ident, reported_at, audit_at):
-        """(resource_id, activity_id of its delete row) or None."""
+    def survivors(self, ident, reported_at, audit_at, taken=None):
+        """{resource_id: (activity_id of its first delete row in the window, minutes from
+        reported_at of its closest one)} after removing accounts tied elsewhere and accounts
+        that `taken` ({resource_id: user_id}) assigns to another user."""
         reported, cutoff = pd.Timestamp(reported_at), pd.Timestamp(audit_at)
         d = self._deletes
         d = d[(d._t >= reported - self.before) & (d._t <= reported + self.after) & (d._t <= cutoff)]
         mine = linking.user_tokens(ident)
-        survivors = {}
-        for rid, aid in zip(d.resource_id, d.activity_id):
-            if rid not in survivors and not self._tied_elsewhere(rid, mine, cutoff):
-                survivors[rid] = aid
+        taken = taken or {}
+        out = {}
+        for rid, aid, t in zip(d.resource_id, d.activity_id, d._t):
+            if taken.get(rid, ident.user_id) != ident.user_id:
+                continue
+            minutes = abs((t - reported).total_seconds()) / 60
+            if rid in out:
+                out[rid] = (out[rid][0], min(out[rid][1], minutes))
+            elif not self._tied_elsewhere(rid, mine, cutoff):
+                out[rid] = (aid, minutes)
+        return out
+
+    @staticmethod
+    def decide(survivors, user_id):
+        """The one survivor, else the one survivor with the user's number, else None."""
         if len(survivors) > 1:
-            n = _number(ident.user_id)
-            survivors = {r: a for r, a in survivors.items() if _number(r) == n}
+            n = _number(user_id)
+            survivors = {r: v for r, v in survivors.items() if _number(r) == n}
         if len(survivors) != 1:
             return None
-        (rid, aid), = survivors.items()
+        (rid, (aid, _)), = survivors.items()
         return rid, aid
+
+    @staticmethod
+    def rank(survivors, user_id):
+        """[(resource_id, minutes from reported_at)], closest first, then the user-number
+        pattern, then resource_id. Measurement only (forced pick, not used by the pipeline)."""
+        n = _number(user_id)
+        return [(r, m) for r, (_, m) in sorted(
+            survivors.items(), key=lambda kv: (kv[1][1], _number(kv[0]) != n, kv[0]))]
+
+    def find(self, ident, reported_at, audit_at):
+        """(resource_id, activity_id of its delete row) or None."""
+        return self.decide(self.survivors(ident, reported_at, audit_at), ident.user_id)
+
+
+PoolCase = namedtuple("PoolCase", "case_id ident reported_at audit_at account")
+
+
+def propagate(cases, finder):
+    """Constraint propagation over every known request (PoolCase rows).
+
+    An account belongs to exactly one user. Accounts that evidence links to a case's
+    user (PoolCase.account) start as taken. Each round decides every unresolved case
+    (finder.decide on its survivors, taken accounts of other users removed); when two
+    users pick the same account in one round, neither gets it. Picks are final.
+    Repeats until a round resolves nothing.
+
+    Returns (picks {case_id: (resource_id, activity_id)}, rounds [{case_id: pick}]).
+    """
+    owner = {}
+    for c in sorted(cases, key=lambda c: c.case_id):
+        if c.account:
+            owner.setdefault(c.account, c.ident.user_id)
+    pending = sorted((c for c in cases if not c.account), key=lambda c: c.case_id)
+    picks, rounds = {}, []
+    while True:
+        decided = {}
+        for c in pending:
+            if c.case_id in picks:
+                continue
+            pick = finder.decide(finder.survivors(c.ident, c.reported_at, c.audit_at, owner),
+                                 c.ident.user_id)
+            if pick is not None:
+                decided[c.case_id] = (c.ident.user_id, pick)
+        users = {}
+        for uid, (rid, _) in decided.values():
+            users.setdefault(rid, set()).add(uid)
+        done = {cid: pick for cid, (uid, pick) in decided.items() if len(users[pick[0]]) == 1}
+        if not done:
+            return picks, rounds
+        for cid, (rid, _) in done.items():
+            owner[rid] = decided[cid][0]
+        picks.update(done)
+        rounds.append(done)

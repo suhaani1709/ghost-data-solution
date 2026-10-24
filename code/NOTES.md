@@ -1,4 +1,4 @@
-# NOTES — working summary (from OCTOBER_STRATEGY.md §2–4)
+# NOTES — working summary (started from a private strategy draft, not part of this repo)
 
 ## Hard output contract
 - `output.csv` at repo root: header `case_id,deletion_status,steps_json`; exactly 518 rows, one per `case_id`, sorted by `case_id`.
@@ -64,14 +64,16 @@
   (≤ `audit_at`, result ignored) picks the one category the system is seen to hold with that rule action.
   On dev, this operation matched the gold treatment for all 46 resources that had one, with no conflicts.
   Fixes support_platform without a hint (SUPPORT_MESSAGE→SUPPORT_ATTACHMENT). Dev P 0.962→0.990,
-  R 0.835→0.860. Held-out unchanged. The 518 run has 0 category fallbacks, so 0 rows change.
+  R 0.835→0.860. Held-out unchanged. In the 518 run it changes 0 rows. Re-measured in session 6: the default run has
+  39 activity-derived categories and 0 system fallbacks. With `activity_category=False` those 39 fall back to the
+  system default, and 0 rows change.
   Tests: `tests/test_category_activity.py`.
 - **Zero-link rule (explicit, `planner.is_zero_link`):** a deletion-authorized request whose linking yields
   no resource at `audit_at` is `COMPLETE` with `[]`. With no evidence there is no finding to cite, so the
   row cannot be INCOMPLETE. No verification step is invented without evidence, and the request does
   authorize deletion, so NOT_APPLICABLE would be wrong. On dev, all 3 zero-link cases have gold COMPLETE.
-  **Known conflict:** `validate.py` flags COMPLETE with no steps, so the 2 zero-link rows in the 518 output stay
-  "invalid" under our own validator. problem_statement.md does not forbid an empty COMPLETE.
+  ~~Known conflict~~ (superseded in session 3): `validate.py` now reports COMPLETE with no steps as a warning,
+  so the 2 zero-link rows are valid (0 invalid). problem_statement.md does not forbid an empty COMPLETE.
   Rejected alternatives: (a) resource-number convention. Evidence rows contradict it in 38 of 45 account/user
   pairs. (b) LINK_RESOURCE_IDENTITY data-catalog activity claims. On dev, 2 such claims dated ≤ `audit_at`
   are not in gold. For the zero-link cases, one claim has no evidence behind it and the other is contradicted
@@ -85,8 +87,8 @@
   committed `pdftotext -layout` pages, exact round trip) and logs one WARNING per PDF. `main.py` now logs at WARNING.
   `output.csv` is byte-identical with and without pdftotext (`tests/test_pdf_fallback.py`, end-to-end with PATH=/usr/bin:/bin).
   Regenerate: `python3 code/ghost/parse_pdf.py --write-text`.
-- **Own cases** (`code/evaluation/own_cases/`, `run_own_cases.py`, `main.py --dataset DIR`): 3/4 pass. **Open finding,
-  not fixed:** "Please do not delete my account." is UNKNOWN to the sentence tables, and `effective_intent` maps
+- **Own cases** (`code/evaluation/own_cases/`, `run_own_cases.py`, `main.py --dataset DIR`): 3/4 pass. **Open finding
+  (closed in session 5, negation table; own cases now 4/4):** "Please do not delete my account." is UNKNOWN to the sentence tables, and `effective_intent` maps
   UNKNOWN → DELETE, so the refusal is audited as a deletion (INCOMPLETE). Changes 0 of 518 rows today (0 UNKNOWN there),
   but it fails open on unseen text. Any fix must be re-measured on the 23 unknown sample openings (all deletions).
 - **Name channel** (`channels.py` N, diagnostic only): dev 0 gold recovered, 2 extra → precision 0.000. Names stay unused.
@@ -104,3 +106,17 @@
   518: 36 rows each gain one account record, no status flips.
 - **Rejected:** same-batch for analytics (dev precision 0.400 with a reported_at window; 0 correct when anchored on the
   account delete). Same-batch for audit records is impossible: no worker activity targets security_service.
+
+## Propagation, forced pick, negation (2026-10-25, session 5)
+- **Kept, default on (`propagate_accounts=True`):** `account_finder.propagate` runs over every deletion request in
+  `dataset/` (518 + 32 samples). An account belongs to one user. Evidence-linked accounts start as taken. Rounds decide
+  unresolved requests with the finder rule; a same-round pick of one account by two users is dropped; picks are final.
+  Rounds resolve 48, 2 and 1. Dev 5/0 (precision 1.000), unchanged from the plain finder. 518: 9 more rows each gain
+  an account (45 found in total). No sample metric changes, so those 9 picks are unvalidated by labels.
+- **Forced pick (measured, NOT enabled):** closest delete to reported_at, user number as tie-break. Dev precision 0.400 at
+  margin ≥ 0 and 0.500 at best (≥ 2, ≥ 5 or ≥ 10 min); it would touch 287 / 279 / 260 / 169 rows of the 518.
+  The gold account is among the candidates in 5/5 dev ambiguous cases, so the remaining gap is choosing between candidates.
+  Diagnostics: `python3 code/evaluation/channels.py --accounts`.
+- **Negation table (`intent.NEGATIONS`):** an UNKNOWN text containing an explicit refusal of deletion is NON_DELETE (logged).
+  The strict classifier is unchanged; other UNKNOWN text still defaults to DELETE (logged). 518 and sample intents are
+  unchanged. Own cases now pass 4/4. The open finding from session 3 is closed.

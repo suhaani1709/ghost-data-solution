@@ -42,7 +42,11 @@ CONFIGS = {
     "table_cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
                     "activity_category": True, "find_account": False, "table_coverage": True},
     "account+cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                      "activity_category": True, "find_account": True, "table_coverage": True},   # default
+                      "activity_category": True, "find_account": True, "table_coverage": True,
+                      "propagate_accounts": False},
+    "propagate": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                  "activity_category": True, "find_account": True, "table_coverage": True,
+                  "propagate_accounts": True},                                 # default
 }
 
 

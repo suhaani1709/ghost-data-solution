@@ -23,7 +23,8 @@ from ghost import account_finder, identity, intent, linking, loaders, observatio
 
 class Pipeline:
     def __init__(self, dataset_dir=None, follow_refs=True, images=True, replica_persist="drift",
-                 activity_category=True, find_account=True, table_coverage=True):
+                 activity_category=True, find_account=True, table_coverage=True,
+                 propagate_accounts=True):
         self.obs = observations.build_observations(dataset_dir, images=images,
                                                    table_coverage=table_coverage)
         self.index = identity.IdentityIndex.from_dataset(dataset_dir)
@@ -37,9 +38,32 @@ class Pipeline:
             actions=dict(zip(rules.data_category, rules.required_action)))
         self.treatments = planner.load_treatments(rules)
         self.finder = account_finder.AccountFinder(self.obs, activity) if find_account else None
+        self.account_picks, self.account_rounds = None, []
+        if self.finder is not None and propagate_accounts:
+            self.account_picks, self.account_rounds = account_finder.propagate(
+                self._account_pool(dataset_dir), self.finder)
         self.stats = Counter()
         self.coercions = Counter()
         self.trace = {}   # case_id -> {"linked": {...}, "resources": [...]}
+
+    def _account_pool(self, dataset_dir):
+        """PoolCase for every deletion request in the dataset (evaluation + sample files)."""
+        frames = [loaders.load_deletion_requests(dataset_dir)]
+        try:
+            frames.append(loaders.load_sample_requests(dataset_dir))
+        except FileNotFoundError:
+            pass
+        pool = []
+        for frame in frames:
+            for case in frame.itertuples(index=False):
+                uid = self.index.resolve_request(case).user_id
+                if uid is None or intent.effective_intent(case.request_text, warn=False) == intent.NON_DELETE:
+                    continue
+                ident = self.index.sets[uid]
+                accounts = [r for s, r in self.linker.link(ident, case.audit_at) if s == "account_service"]
+                pool.append(account_finder.PoolCase(case.case_id, ident, case.reported_at,
+                                                    case.audit_at, accounts[0] if accounts else None))
+        return pool
 
     def run_case(self, case):
         if intent.effective_intent(case.request_text) == intent.NON_DELETE:
@@ -52,7 +76,11 @@ class Pipeline:
         else:
             linked = self.linker.link(self.index.sets[res.user_id], case.audit_at)
             if self.finder is not None and account_finder.needs_account(linked):
-                pick = self.finder.find(self.index.sets[res.user_id], case.reported_at, case.audit_at)
+                if self.account_picks is not None:
+                    pick = self.account_picks.get(case.case_id)
+                else:
+                    pick = self.finder.find(self.index.sets[res.user_id], case.reported_at,
+                                            case.audit_at)
                 if pick is not None:
                     self.stats["account_found"] += 1
                     linked = dict(sorted({**linked, ("account_service", pick[0]): [pick[1]]}.items()))

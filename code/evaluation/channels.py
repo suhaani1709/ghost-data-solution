@@ -15,6 +15,12 @@ top of the pipeline's evidence-linked set L:
 Reported on dev(22): activity-only gold recovered, extra (wrong) resources
 added, resulting linkage recall / precision, extras that are other dev
 cases' gold resources. Held-out(10): aggregates only.
+
+Run:  python3 code/evaluation/channels.py --accounts
+Account finder diagnostics: the kept finder vs constraint propagation
+(account_finder.propagate) per round, and a forced pick (closest delete to
+reported_at, user number as tie-break) for what stays ambiguous, by margin
+between the first and second candidate. Counts only; held-out aggregates.
 """
 import re
 import sys
@@ -137,5 +143,63 @@ def main():
           "newP=newG/(newG+extra)")
 
 
+def accounts():
+    from ghost import account_finder
+    gold = score.gold_cases()
+    _, dev, held = score.split_ids(gold)
+    main_mod = score.load_pipeline_module()
+    pipe = main_mod.Pipeline(propagate_accounts=True)
+    pool = {c.case_id: c for c in pipe._account_pool(None)}
+    gold_acct = {c: [s["resource_id"] for s in gold[c][1] if s["system_id"] == "account_service"][0]
+                 for c in gold}
+    need = {c for c in pool if not pool[c].account}
+    f = pipe.finder
+
+    def tally(picks, ids):
+        ids = [c for c in ids if c in need]
+        rec = sum(c in picks and picks[c][0] == gold_acct[c] for c in ids)
+        wrong = sum(c in picks and picks[c][0] != gold_acct[c] for c in ids)
+        return len(ids), rec, wrong, rec / max(rec + wrong, 1)
+
+    kept = {c: p for c in need if (p := f.find(pool[c].ident, pool[c].reported_at, pool[c].audit_at))}
+    print("account picks (cases needing one: picked correctly / wrong / precision)")
+    for name, picks in [("kept finder", kept)] + [
+            (f"propagation round {i}", {k: v for r in pipe.account_rounds[:i] for k, v in r.items()})
+            for i in range(1, len(pipe.account_rounds) + 1)]:
+        n518 = sum(c in picks for c in need if c not in gold)
+        row = []
+        for split, ids in (("dev", dev), ("held", held)):
+            n, rec, wrong, prec = tally(picks, ids)
+            row.append(f"{split} {rec}/{wrong}/{prec:.3f} (of {n})")
+        print(f"  {name:22s} {' | '.join(row)} | 518 picks {n518}")
+    picks = pipe.account_picks
+    owner = {c.account: c.ident.user_id for c in pool.values() if c.account}
+    for c, (rid, _) in sorted(picks.items()):
+        owner.setdefault(rid, pool[c].ident.user_id)
+    left = {c: f.survivors(pool[c].ident, pool[c].reported_at, pool[c].audit_at, owner)
+            for c in need if c not in picks}
+    amb = {c: v for c, v in left.items() if len(v) >= 2}
+    print(f"after propagation: unresolved {len(left)} (>=2 candidates {len(amb)}, 1 candidate "
+          f"{sum(len(v) == 1 for v in left.values())}, 0 candidates {sum(not v for v in left.values())});"
+          f" 518 unresolved {sum(c not in gold for c in left)}, of which >=2 candidates "
+          f"{sum(c not in gold for c in amb)}")
+    print("forced pick (top-ranked candidate) on cases with >=2 candidates")
+    print(f"  {'margin >=':>10s} {'dev ok/wrong/prec':>20s} {'held ok/wrong':>14s} {'518 rows':>9s}")
+    ranked = {c: f.rank(v, pool[c].ident.user_id) for c, v in amb.items()}
+    for margin in (0, 2, 5, 10, 20, 30):
+        sel = {c: r for c, r in ranked.items() if r[1][1] - r[0][1] >= margin}
+        out = []
+        for ids in (dev, held):
+            ok = sum(c in sel and sel[c][0][0] == gold_acct[c] for c in ids)
+            bad = sum(c in sel and sel[c][0][0] != gold_acct[c] for c in ids)
+            out.append((ok, bad))
+        (dok, dbad), (hok, hbad) = out
+        print(f"  {margin:>7d} min {dok:>6d}/{dbad}/{dok / max(dok + dbad, 1):.3f}       {hok:>4d}/{hbad}"
+              f" {sum(c not in gold for c in sel):>12d}")
+    in_pool = sum(gold_acct[c] in left[c] for c in dev if c in amb)
+    print(f"  dev ambiguous cases whose gold account is among the candidates: {in_pool}/"
+          f"{sum(c in amb for c in dev)}")
+
+
 if __name__ == "__main__":
-    main()
+    accounts() if sys.argv[1:] == ["--accounts"] else main()

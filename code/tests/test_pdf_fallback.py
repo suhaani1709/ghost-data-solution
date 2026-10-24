@@ -7,6 +7,7 @@ observations and output.csv must be identical either way.
 
 Run:  python3 code/tests/test_pdf_fallback.py
 """
+import io
 import os
 import shutil
 import subprocess
@@ -69,6 +70,17 @@ class FallbackTest(unittest.TestCase):
                 self.assertLogs(pc.log, "WARNING"):
             fallback = observations.to_records(observations.build_observations(images=True))
         self.assertEqual(live, fallback)
+
+
+class SuiteWithoutPdftotextTest(unittest.TestCase):
+    def test_parser_acceptance_tests_pass_without_pdftotext(self):
+        import test_parsers
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(test_parsers.EvidenceAcceptanceTest)
+        with mock.patch.object(pc.shutil, "which", return_value=None), \
+                self.assertLogs(pc.log, "WARNING"):
+            result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+        self.assertEqual((len(result.errors), len(result.failures)), (0, 0),
+                         [str(t) for t, _ in result.errors + result.failures])
 
 
 @unittest.skipUnless(HAVE_PDFTOTEXT, "pdftotext not installed")

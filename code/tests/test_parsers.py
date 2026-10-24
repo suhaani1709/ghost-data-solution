@@ -39,9 +39,9 @@ def text_files():
     return manifest[~manifest.file_path.str.lower().str.endswith(".png")]
 
 
-def raw_text(path):
+def raw_text(path, file_id=None):
     if path.suffix.lower() == ".pdf":
-        return "\n".join(parse_common.pdf_pages(path))
+        return "\n".join(parse_common.pdf_pages(path, file_id=file_id))
     return path.read_text(encoding="utf-8")
 
 
@@ -231,7 +231,7 @@ def missing_resource_ids():
     parsed = table().groupby("file_id").resource_id.agg(set).to_dict()
     missing = Counter()
     for r in text_files().itertuples():
-        found = set(parse_common.RESOURCE_ID.findall(raw_text(EVIDENCE_DIR.parent / r.file_path)))
+        found = set(parse_common.RESOURCE_ID.findall(raw_text(EVIDENCE_DIR.parent / r.file_path, r.file_id)))
         missing[r.file_path] += len(found - parsed.get(r.file_id, set()))
     return +missing
 
