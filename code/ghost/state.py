@@ -5,10 +5,25 @@ stateful observation of the resource, or that is a covering snapshot of the
 resource's system without the resource (a coverage row: resource_id "" and
 the same system_id) -> ABSENT, cited to that snapshot. Within the chosen
 file, any copy showing the data wins (replica drift: one PRESENT copy means
-PRESENT). On a tie in captured_at, a real observation beats a coverage row.
+PRESENT); the same holds across files of the same captured_at. On a tie in
+captured_at, a real observation beats a coverage row.
+
+Replica drift (replica_persist="drift", default): when the latest file that
+captures a replica copy of the system (<= audit_at) holds the resource in a
+replica copy with exposed data while that file's primary copy of the system
+lacks it or holds it compliant, the resource stays PRESENT, cited to that
+file, even if a later snapshot that does not capture the replica (e.g. a
+primary-only inventory) shows it absent or redacted. A later replica capture
+of the system without the row, or with it compliant, ends this.
+"any" drops the primary-side condition; "off" disables the rule.
 
 Category = the most common non-empty category_hint of the resource's
-observations up to audit_at, else a system_id fallback (counted).
+observations up to audit_at. Without a hint, the treatment operation the
+deletion workflow ran on the resource (DELETE_RECORD / REDACT_RECORD /
+ANONYMIZE_RECORD activity rows, event_time <= audit_at; the reported result
+is ignored) picks the category, among those the system is seen to hold,
+whose deletion_rules action matches; only when this is unambiguous
+(counted as activity_categories). Else a system_id fallback (counted).
 
 planner_state() maps the observation vocabulary onto the planner's
 (IDENTIFIABLE -> PRESENT, ...); impossible combinations are coerced to the
@@ -26,6 +41,10 @@ ResourceState = namedtuple("ResourceState", "state evidence_id copy")
 SEVERITY = ("IDENTIFIABLE", "PRESENT", "ACTIVE", "REDACTED", "ANONYMIZED", "DISABLED",
             "BLOCKED", "ABSENT")
 COVERAGE_KINDS = ("sql", "json")
+EXPOSED = ("IDENTIFIABLE", "PRESENT", "ACTIVE")
+REPLICA_PERSIST = ("off", "any", "drift")
+ACTION_OF_OPERATION = {"DELETE_RECORD": "DELETE", "REDACT_RECORD": "REDACT",
+                       "ANONYMIZE_RECORD": "ANONYMIZE"}
 
 CATEGORY_BY_SYSTEM = {
     "account_service": "USER_PROFILE", "search_service": "SEARCH_INDEX_ENTRY",
@@ -44,7 +63,10 @@ def _ts(value):
 
 
 class StateResolver:
-    def __init__(self, obs):
+    def __init__(self, obs, replica_persist="drift", activity=None, actions=None):
+        if replica_persist not in REPLICA_PERSIST:
+            raise ValueError(f"replica_persist must be one of {REPLICA_PERSIST}")
+        self.replica_persist = replica_persist
         obs = obs.assign(_t=pd.to_datetime(obs.captured_at, utc=True))
         stateful = obs[(obs.resource_id != "") & ~obs.state.isin(["", "REFERENCED"])]
         self._by_resource = {k: g for k, g in stateful.groupby(["system_id", "resource_id"])}
@@ -56,6 +78,26 @@ class StateResolver:
         self._files_of = {k: set(g.file_id) for k, g in hinted.groupby(["system_id", "resource_id"])}
         self.fallbacks = 0
         self.fallback_log = Counter()
+        self.replica_holds = 0
+        self.activity_categories = 0
+        # system -> categories it is seen to hold; (system, resource) -> [(time, action)].
+        self._system_categories = {k: sorted(set(g.category_hint) - {""})
+                                   for k, g in hinted.groupby("system_id")}
+        self._actions = actions or {}
+        self._treatment_ops = {}
+        if activity is not None and len(activity) and self._actions:
+            ops = activity[activity.event_type.isin(ACTION_OF_OPERATION)]
+            for t, s_, r, e in zip(pd.to_datetime(ops.event_time, utc=True), ops.target_system,
+                                   ops.resource_id, ops.event_type):
+                self._treatment_ops.setdefault((s_, r), []).append((t, ACTION_OF_OPERATION[e]))
+        # (file_id, system_id, copy) -> {resource_id: [states]}; system -> replica-capturing files.
+        self._copies = {}
+        for f, s_, c, r, st in zip(stateful.file_id, stateful.system_id, stateful["copy"],
+                                   stateful.resource_id, stateful.state):
+            self._copies.setdefault((f, s_, c), {}).setdefault(r, []).append(st)
+        rep = stateful[stateful["copy"] == "replica"]
+        self._replica_files = {k: g.drop_duplicates("file_id")[["file_id", "_t"]]
+                               for k, g in rep.groupby("system_id")}
 
     def resolve(self, system_id, resource_id, audit_at, allow_absence=True):
         """ResourceState at audit_at, or None when nothing stateful is known.
@@ -83,7 +125,34 @@ class StateResolver:
                 if best_t is None or t > best_t:
                     f = cover[cover._t == t].sort_values("file_id").iloc[0]
                     best = ResourceState("ABSENT", f.file_id, f.copy)
+                    best_t = t
+        if best is not None and best.state not in EXPOSED and self.replica_persist != "off":
+            hold = self._replica_hold(system_id, resource_id, cutoff)
+            if hold is not None and hold[0] < best_t:
+                self.replica_holds += 1
+                best = hold[1]
         return best
+
+    def _replica_hold(self, system_id, resource_id, cutoff):
+        """(captured_at, ResourceState) when the latest replica capture of the system holds the
+        resource exposed in a replica copy (and, mode "drift", its primary copy does not)."""
+        files = self._replica_files.get(system_id)
+        if files is None:
+            return None
+        files = files[files._t <= cutoff]
+        if not len(files):
+            return None
+        t = files._t.max()
+        for f in sorted(files[files._t == t].file_id):
+            held = self._copies[(f, system_id, "replica")].get(resource_id, [])
+            if not any(st in EXPOSED for st in held):
+                continue
+            if self.replica_persist == "drift":
+                primary = self._copies.get((f, system_id, "primary"))
+                if not primary or any(st in EXPOSED for st in primary.get(resource_id, [])):
+                    continue
+            return t, ResourceState("PRESENT", f, "replica")
+        return None
 
     def category(self, system_id, resource_id, audit_at):
         rows = self._hints.get((system_id, resource_id))
@@ -95,6 +164,14 @@ class StateResolver:
                 top = max(counts.values())
                 return latest if counts[latest] == top else sorted(
                     c for c, n in counts.items() if n == top)[0]
+        cutoff = _ts(audit_at)
+        done = {a for t, a in self._treatment_ops.get((system_id, resource_id), ()) if t <= cutoff}
+        if len(done) == 1:
+            cands = [c for c in self._system_categories.get(system_id, ())
+                     if self._actions.get(c) in done]
+            if len(cands) == 1:
+                self.activity_categories += 1
+                return cands[0]
         self.fallbacks += 1
         self.fallback_log[system_id] += 1
         return CATEGORY_BY_SYSTEM.get(system_id, "")

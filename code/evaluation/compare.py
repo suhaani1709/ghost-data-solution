@@ -23,10 +23,20 @@ import validate  # noqa: E402
 from ghost import loaders  # noqa: E402
 
 CONFIGS = {
-    "base": {"follow_refs": False, "images": False},
-    "follow_refs": {"follow_refs": True, "images": False},
-    "images": {"follow_refs": False, "images": True},
-    "follow+images": {"follow_refs": True, "images": True},     # current default
+    "base": {"follow_refs": False, "images": False,
+             "replica_persist": "off", "activity_category": False},
+    "follow_refs": {"follow_refs": True, "images": False,
+             "replica_persist": "off", "activity_category": False},
+    "images": {"follow_refs": False, "images": True,
+             "replica_persist": "off", "activity_category": False},
+    "follow+images": {"follow_refs": True, "images": True, "replica_persist": "off",
+                      "activity_category": False},
+    "replica_any": {"follow_refs": True, "images": True, "replica_persist": "any",
+                    "activity_category": False},
+    "replica_drift": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                      "activity_category": False},
+    "drift+actcat": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                     "activity_category": True},                                  # default
 }
 
 

@@ -48,3 +48,33 @@
   No change on the samples. In the 518-case run, invalid rows went from 9 to 2 and 9 rows changed.
 - **Resource-number fallback for zero-link cases (rejected, removed):** it touched 3 dev cases, added 1 wrong
   resource (dev step P 0.951→0.942) and touched 0 of the 518. It was not kept.
+
+## State / policy / zero-link rules (2026-10-24, session 2), measured with `compare.py`
+- **Replica drift persistence (kept, default `replica_persist="drift"`, `state.py`):** "any copy present"
+  already held within one file and across files of the same `captured_at`. The dev failure was different:
+  a primary-only inventory snapshot (snapshot_scope, 0 rows) captured *later* proved ABSENT and overrode
+  an earlier file whose failover-replica table still held the row while its primary table did not.
+  Rule: if the latest replica capture of the system (≤ `audit_at`) holds the resource exposed in a replica
+  copy while that file's primary copy lacks it or holds it compliant, the resource stays PRESENT, cited to
+  that file, until a later replica capture shows it gone or compliant. `"any"` (no primary condition) scored
+  the same on the samples; `"drift"` is stricter. Dev status 0.955→1.000, P 0.951→0.962, R 0.810→0.835.
+  Held-out unchanged. 0 of 518 rows changed. Tests: `tests/test_replica_drift.py`.
+- **Activity treatment as category fallback (kept, `activity_category=True`):** used only when no observation
+  carries a category hint. A DELETE_RECORD / REDACT_RECORD / ANONYMIZE_RECORD activity row on the resource
+  (≤ `audit_at`, result ignored) picks the one category the system is seen to hold with that rule action.
+  On dev, this operation matched the gold treatment for all 46 resources that had one, with no conflicts.
+  Fixes support_platform without a hint (SUPPORT_MESSAGE→SUPPORT_ATTACHMENT). Dev P 0.962→0.990,
+  R 0.835→0.860. Held-out unchanged. The 518 run has 0 category fallbacks, so 0 rows change.
+  Tests: `tests/test_category_activity.py`.
+- **Zero-link rule (explicit, `planner.is_zero_link`):** a deletion-authorized request whose linking yields
+  no resource at `audit_at` is `COMPLETE` with `[]`. With no evidence there is no finding to cite, so the
+  row cannot be INCOMPLETE. No verification step is invented without evidence, and the request does
+  authorize deletion, so NOT_APPLICABLE would be wrong. On dev, all 3 zero-link cases have gold COMPLETE.
+  **Known conflict:** `validate.py` flags COMPLETE with no steps, so the 2 zero-link rows in the 518 output stay
+  "invalid" under our own validator. problem_statement.md does not forbid an empty COMPLETE.
+  Rejected alternatives: (a) resource-number convention. Evidence rows contradict it in 38 of 45 account/user
+  pairs. (b) LINK_RESOURCE_IDENTITY data-catalog activity claims. On dev, 2 such claims dated ≤ `audit_at`
+  are not in gold. For the zero-link cases, one claim has no evidence behind it and the other is contradicted
+  by an image showing a different person. Tests: `tests/test_zero_link.py`.
+- **Runtime dependency:** `parse_pdf.py` calls the `pdftotext` binary (poppler). It is not a pip package.
+  Without it on PATH the run fails, so document it in the README.

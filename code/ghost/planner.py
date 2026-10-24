@@ -88,12 +88,22 @@ def _sort_key(step):
     return (PHASES.index(step["phase"]), OP_ORDER[step["operation"]], step["system_id"], step["resource_id"])
 
 
+def is_zero_link(resources):
+    """True when a deletion request has no linked, categorized resource (zero-link rule)."""
+    return not list(resources)
+
+
 def build_steps(resources, treatments=None):
     """resources: iterable of (system_id, resource_id, category, observed_state, evidence_id).
 
     Returns (status, steps) with status COMPLETE or INCOMPLETE.
     A resource is compliant when observed_state equals its required final state.
+    Zero-link rule (NOTES.md): no resources -> ("COMPLETE", []); nothing remaining is
+    evidenced, and no verification step is invented without evidence.
     """
+    resources = list(resources)
+    if is_zero_link(resources):
+        return "COMPLETE", []
     treatments = load_treatments() if treatments is None else treatments
     seen, plan = set(), []
     for system_id, resource_id, category, observed, evidence_id in resources:

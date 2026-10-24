@@ -838,3 +838,35 @@ branch=main
 repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-24T14:31:00Z] SESSION START
+
+tool=Claude Code
+model=claude-opus-5-5
+Repo Root: /Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+Branch: main
+Worktree: main
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-24T14:43:38Z] Replica drift, activity category fallback, zero-link rule, 518 checks
+
+User Prompt (verbatim, secrets redacted):
+[Pasted instructions, no user text] Read AGENTS.md first and follow its logging rules (per-turn entries in log.txt). Read code/NOTES.md. Reuse code/ghost/ and code/evaluation/. Four tasks, in order. Tests first where code changes. Revert any change that lowers a dev-22 or held-out-10 metric. TASK 1 - case_05 state error (general rule, not a case fix): find why a resource is marked ABSENT and cited to a file that shows it absent while gold says PRESENT; check whether the file has several tables/copies (primary and replica); if so make a general rule: within one file, and across files of the same capture time, PRESENT if ANY copy holds it, citing the file/copy that proves presence; add a test with made-up frames; report before/after on dev-22, held-out-10 aggregate, and how many of the 518 rows change and in which direction. TASK 2 - case_10 wrong policy: report structure only (category assigned, gold applies, which observation field drove the choice); fix only if a general rule with a clear signal, otherwise document in NOTES.md. TASK 3 - the 2 invalid rows (COMPLETE with no steps): report structure and counts only, and whether ANY observation including activity rows mentions an identifier of that user; then apply ONE general documented rule for "deletion request that links to zero resources", following problem_statement.md and the validator rules; put the rule in NOTES.md and add a test; no case_id special cases. TASK 4 - checks on all 518 rows, compact tables: status counts, steps per case min/median/max vs samples, operation counts vs samples, category fallbacks and state coercions, cited evidence after audit_at must be 0, same-user pair linkage monotonic, run main.py twice from a clean checkout and diff (byte-identical), confirm no network/API key and image_transcripts.md read at run time. Finish with before/after table (validate invalid rows, dev-22 and held-out-10 status, step P/R/F1, exact match, linkage recall/precision, planner oracle). RULES: stdlib + pandas only, no installs, no edits to dataset/, no hard-coded case_ids, no paid model calls, no per-case special handling. Do not analyze the held-out 10 beyond aggregates. Compact output, then stop.
+
+Agent Response Summary:
+Task 1: "any copy present" already held within one file and across files of the same capture time. The real cause was a later primary-only inventory snapshot whose absence overrode an earlier failover-replica row that the same file's primary table lacked. I added a replica-drift persistence rule with tests. Dev status went 0.955->1.000 and F1 0.875->0.894, held-out is unchanged, and 0 of 518 rows changed. Task 2: support_platform had no category hint, so the system fallback gave SUPPORT_MESSAGE (REDACT) where gold applies DELETE. I added a general fallback from the workflow's treatment operation, which matched gold for 46 of 46 dev resources; dev F1 is now 0.920, and it changes 0 of 518 rows. Task 3: both rows resolve via the current email and have zero evidence links dated on or before audit_at. Each has only one data-catalog activity claim, unbacked or contradicted, so I made the zero-link rule explicit as COMPLETE with [], with a test and NOTES. The validator still flags these 2 rows, a known conflict documented for the user. Task 4 checks all pass; two clean-copy runs are byte-identical, and the pdftotext binary is an undocumented runtime dependency.
+
+Actions:
+* edited code/ghost/state.py, code/ghost/planner.py, code/main.py, code/evaluation/compare.py, code/NOTES.md
+* created code/tests/test_replica_drift.py, test_category_activity.py, test_zero_link.py
+* ran unittest discover (82 OK), compare.py, validate.py, main.py; clean-copy double run in scratchpad (cmp identical); regenerated output.csv (unchanged vs HEAD)
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none

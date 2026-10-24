@@ -21,13 +21,19 @@ from ghost import identity, intent, linking, loaders, observations, planner, sta
 
 
 class Pipeline:
-    def __init__(self, dataset_dir=None, follow_refs=True, images=True):
+    def __init__(self, dataset_dir=None, follow_refs=True, images=True, replica_persist="drift",
+                 activity_category=True):
         self.obs = observations.build_observations(dataset_dir, images=images)
         self.index = identity.IdentityIndex.from_dataset(dataset_dir)
-        activity = loaders.load_system_activity(dataset_dir) if follow_refs else None
-        self.linker = linking.Linker(self.obs, activity=activity, follow=follow_refs)
-        self.resolver = state.StateResolver(self.obs)
-        self.treatments = planner.load_treatments(loaders.load_deletion_rules(dataset_dir))
+        activity = loaders.load_system_activity(dataset_dir)
+        rules = loaders.load_deletion_rules(dataset_dir)
+        self.linker = linking.Linker(self.obs, activity=activity if follow_refs else None,
+                                     follow=follow_refs)
+        self.resolver = state.StateResolver(
+            self.obs, replica_persist=replica_persist,
+            activity=activity if activity_category else None,
+            actions=dict(zip(rules.data_category, rules.required_action)))
+        self.treatments = planner.load_treatments(rules)
         self.stats = Counter()
         self.coercions = Counter()
         self.trace = {}   # case_id -> {"linked": {...}, "resources": [...]}
@@ -57,6 +63,8 @@ class Pipeline:
             pstate = state.planner_state(category, st.state, self.treatments, self.coercions)
             resources.append((system_id, resource_id, category, pstate, st.evidence_id))
         self.trace[case.case_id] = {"linked": linked, "resources": resources}
+        if planner.is_zero_link(resources):
+            self.stats["zero_link_complete"] += 1
         return planner.build_steps(resources, self.treatments)
 
     def run(self, requests):
@@ -93,6 +101,7 @@ def main(argv=None):
     print(f"wrote {len(rows)} rows -> {out}")
     print("status:", dict(Counter(r["deletion_status"] for r in rows)))
     print("stats:", dict(pipe.stats), "| category fallbacks:", pipe.resolver.fallbacks,
+          "| activity categories:", pipe.resolver.activity_categories,
           "| state coercions:", sum(pipe.coercions.values()))
 
 
