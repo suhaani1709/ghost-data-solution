@@ -5,8 +5,8 @@ disk is only read. Tables with a record_json column carry origin_system and
 collection_name; plain tables are categorized by table name. A table (or a
 file whose header says so) with "replica" in its name is copy=replica, one
 with "primary" is copy=primary. snapshot_scope rows are coverage metadata,
-not records: they only produce a resource-less unit for an in-scope table
-that has no rows (a covering snapshot that lacks the record).
+not records: every in-scope system gets one resource-less unit, so any of
+its resources missing from the snapshot's rows is provably absent there.
 """
 import json
 import re
@@ -54,6 +54,7 @@ def parse_sql(path):
         if "snapshot_scope" in tables:
             scope = dict(con.execute("SELECT origin_system, captured_at FROM snapshot_scope"))
         out = []
+        table_of = {}
         for table in tables:
             if table in SKIP_TABLES:
                 continue
@@ -63,12 +64,14 @@ def parse_sql(path):
             rows = cur.fetchall()
             for row in rows:
                 out += _row_units(table, dict(zip(cols, row)), copy)
-            system = TABLE_SYSTEMS.get(table)
-            if not rows and system in scope:
-                out.append(pc.make_unit(
-                    system_id=system, resource_id="", category_hint=_table_category(table),
-                    state="", text=f"snapshot_scope {system} {scope[system]}: {table} has 0 rows",
-                    copy=copy, event_time=scope[system]))
+            if TABLE_SYSTEMS.get(table) in scope:
+                table_of[TABLE_SYSTEMS[table]] = (table, len(rows), copy)
+        for system in sorted(scope):
+            table, n, copy = table_of.get(system, ("", 0, _copy("", topology)))
+            out.append(pc.make_unit(
+                system_id=system, resource_id="", category_hint=_table_category(table),
+                state="", text=f"snapshot_scope {system} {scope[system]}: {table} has {n} rows",
+                copy=copy, event_time=scope[system]))
         return out
     finally:
         con.close()

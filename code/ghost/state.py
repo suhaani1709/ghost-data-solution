@@ -57,8 +57,12 @@ class StateResolver:
         self.fallbacks = 0
         self.fallback_log = Counter()
 
-    def resolve(self, system_id, resource_id, audit_at):
-        """ResourceState at audit_at, or None when nothing stateful is known."""
+    def resolve(self, system_id, resource_id, audit_at, allow_absence=True):
+        """ResourceState at audit_at, or None when nothing stateful is known.
+
+        allow_absence=False ignores coverage rows (used for retained records:
+        a partial snapshot cannot prove a record that policy keeps is gone).
+        """
         cutoff = _ts(audit_at)
         best_t, best = None, None
         own = self._by_resource.get((system_id, resource_id))
@@ -70,7 +74,7 @@ class StateResolver:
                 pick = min(rows.itertuples(), key=lambda r: (SEVERITY.index(r.state)
                                                               if r.state in SEVERITY else 99))
                 best = ResourceState(pick.state, pick.file_id, pick.copy)
-        cover = self._coverage.get(system_id)
+        cover = self._coverage.get(system_id) if allow_absence else None
         if cover is not None:
             seen = self._files_of.get((system_id, resource_id), set())
             cover = cover[(cover._t <= cutoff) & ~cover.file_id.isin(seen)]

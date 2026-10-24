@@ -42,13 +42,15 @@ class Pipeline:
             linked = self.linker.link(self.index.sets[res.user_id], case.audit_at)
         resources = []
         for (system_id, resource_id) in linked:
-            st = self.resolver.resolve(system_id, resource_id, case.audit_at)
-            if st is None:
-                self.stats["no_state"] += 1
-                continue
             category = self.resolver.category(system_id, resource_id, case.audit_at)
             if category not in self.treatments:
                 self.stats["unknown_category"] += 1
+                continue
+            retained = self.treatments[category].verification == "VERIFY_RECORD_PRESENT"
+            st = self.resolver.resolve(system_id, resource_id, case.audit_at,
+                                       allow_absence=not retained)
+            if st is None:
+                self.stats["no_state"] += 1
                 continue
             pstate = state.planner_state(category, st.state, self.treatments, self.coercions)
             resources.append((system_id, resource_id, category, pstate, st.evidence_id))
