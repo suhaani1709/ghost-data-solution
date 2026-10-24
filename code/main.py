@@ -3,6 +3,8 @@
 Per case: intent -> (NOT_APPLICABLE, []) or identity -> linking -> state ->
 category -> planner.build_steps. Linking follows one reference hop from
 linked resources; PNG evidence comes from code/image_transcripts.md.
+Late links (log events / records dated <= audit_at in files exported after it) add only
+compliant, citation-free verification steps to INCOMPLETE cases.
 
 Run:  python3 code/main.py                       # 518 cases -> output.csv at the repo root
       python3 code/main.py --sample --out PATH   # the 32 public sample requests
@@ -23,13 +25,14 @@ from ghost import identity, intent, linking, loaders, observations, planner, sta
 
 class Pipeline:
     def __init__(self, dataset_dir=None, follow_refs=True, images=True, replica_persist="drift",
-                 activity_category=True):
+                 activity_category=True, late_kinds=("log", "json", "sql", "txt")):
         self.obs = observations.build_observations(dataset_dir, images=images)
         self.index = identity.IdentityIndex.from_dataset(dataset_dir)
         activity = loaders.load_system_activity(dataset_dir)
         rules = loaders.load_deletion_rules(dataset_dir)
+        self.late_kinds = tuple(late_kinds)
         self.linker = linking.Linker(self.obs, activity=activity if follow_refs else None,
-                                     follow=follow_refs)
+                                     follow=follow_refs, late_kinds=self.late_kinds)
         self.resolver = state.StateResolver(
             self.obs, replica_persist=replica_persist,
             activity=activity if activity_category else None,
@@ -63,10 +66,39 @@ class Pipeline:
                 continue
             pstate = state.planner_state(category, st.state, self.treatments, self.coercions)
             resources.append((system_id, resource_id, category, pstate, st.evidence_id))
-        self.trace[case.case_id] = {"linked": linked, "resources": resources}
+        late = self._late_resources(res.user_id, linked, case.audit_at)
+        self.trace[case.case_id] = {"linked": linked, "resources": resources, "late": late}
         if planner.is_zero_link(resources):
             self.stats["zero_link_complete"] += 1
-        return planner.build_steps(resources, self.treatments)
+        status, steps = planner.build_steps(resources, self.treatments)
+        if status == "INCOMPLETE" and late:
+            # Verification of a compliant resource in an INCOMPLETE case carries evidence_id "",
+            # so a late-exported file is used without being cited. Status cannot change.
+            self.stats["late_resources"] += len(late)
+            status, steps = planner.build_steps(resources + late, self.treatments)
+        return status, steps
+
+    def _late_resources(self, user_id, linked, audit_at):
+        """Compliant resources linked only through late-exported log events (see linking.py)."""
+        if user_id is None or not self.late_kinds:
+            return []
+        out = []
+        found = self.linker.late_links(self.index.sets[user_id], audit_at, exclude=set(linked))
+        for (system_id, resource_id) in found:
+            late = self.resolver.resolve_late(system_id, resource_id, audit_at, self.late_kinds)
+            if late is None:
+                continue
+            raw, hint = late
+            category = hint or state.CATEGORY_BY_SYSTEM.get(system_id, "")
+            if category not in self.treatments:
+                continue
+            compliant = planner.STATE_OF[self.treatments[category].verification]
+            pstate = state.planner_state(category, raw, self.treatments)
+            if pstate != compliant:
+                self.stats["late_noncompliant_skipped"] += 1   # a finding would need a citation
+                continue
+            out.append((system_id, resource_id, category, pstate, ""))
+        return out
 
     def run(self, requests):
         rows = []

@@ -1,0 +1,4 @@
+file_id,file_path,origin,captured_at
+evidence_f1,evidence/records/customer_data_snapshot_bundle_20260620.json,records_assurance_snapshot_bundle,2026-06-20T12:00:00Z
+evidence_f2,evidence/records/customer_data_snapshot_bundle_20260708.json,records_assurance_snapshot_bundle,2026-07-08T12:00:00Z
+evidence_f3,evidence/logs/structured_service_events_eu_west_20260712.log,central_observability_export,2026-07-12T11:00:00Z

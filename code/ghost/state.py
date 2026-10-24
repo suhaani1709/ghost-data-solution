@@ -67,7 +67,9 @@ class StateResolver:
         if replica_persist not in REPLICA_PERSIST:
             raise ValueError(f"replica_persist must be one of {REPLICA_PERSIST}")
         self.replica_persist = replica_persist
-        obs = obs.assign(_t=pd.to_datetime(obs.captured_at, utc=True))
+        obs = obs.assign(_t=pd.to_datetime(obs.captured_at, utc=True),
+                         _e=pd.to_datetime(obs.event_time.where(obs.event_time != ""),
+                                           utc=True, errors="coerce"))
         stateful = obs[(obs.resource_id != "") & ~obs.state.isin(["", "REFERENCED"])]
         self._by_resource = {k: g for k, g in stateful.groupby(["system_id", "resource_id"])}
         hinted = obs[obs.resource_id != ""]
@@ -132,6 +134,24 @@ class StateResolver:
                 self.replica_holds += 1
                 best = hold[1]
         return best
+
+    def resolve_late(self, system_id, resource_id, audit_at, kinds=("log",)):
+        """(state, category_hint) from observations in files captured *after* audit_at whose own
+        event_time is <= audit_at (latest event wins; on a tie any exposed copy wins), or None.
+        Used only for late-linked resources; the caller must not cite these files."""
+        cutoff = _ts(audit_at)
+        rows = self._hints.get((system_id, resource_id))
+        if rows is None:
+            return None
+        rows = rows[(rows._t > cutoff) & rows.file_kind.isin(kinds) & rows._e.notna()
+                    & (rows._e <= cutoff)]
+        hints = sorted(set(rows.category_hint) - {""})
+        rows = rows[~rows.state.isin(["", "REFERENCED"])]
+        if not len(rows):
+            return None
+        latest = rows[rows._e == rows._e.max()]
+        pick = min(latest.state, key=lambda st: SEVERITY.index(st) if st in SEVERITY else 99)
+        return pick, (hints[0] if len(hints) == 1 else "")
 
     def _replica_hold(self, system_id, resource_id, cutoff):
         """(captured_at, ResourceState) when the latest replica capture of the system holds the

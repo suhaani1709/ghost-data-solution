@@ -1,0 +1,4 @@
+2026-07-10T08:50:00Z {"severity":"INFO","logger":"security_service","service":"security_service","trace_id":"tr-9402","event":"audit_record_query_started","subject_ref":"user_9301","attempt":"1"}
+2026-07-10T08:50:05Z {"severity":"INFO","logger":"security_service","service":"security_service","trace_id":"tr-9402","event":"audit_record_read_completed","resource_id":"audit_record_9402","integrity_check":"passed","rows":"1"}
+2026-07-10T09:30:00Z {"severity":"INFO","logger":"account_service","service":"account_service","trace_id":"tr-9403","event":"profile_lookup_started","lookup_key":"eve.tran@example.com","attempt":"1"}
+2026-07-10T09:30:02Z {"severity":"INFO","logger":"account_service","service":"account_service","trace_id":"tr-9403","event":"profile_lookup_completed","resource_id":"account_9403","rows":"0","http_status":"404"}

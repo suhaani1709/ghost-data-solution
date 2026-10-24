@@ -1,0 +1,22 @@
+{
+  "exported_at": "2026-06-20T12:00:00Z",
+  "source": "records_assurance_service",
+  "snapshots": [
+    {
+      "captured_at": "2026-06-20T12:00:00Z",
+      "data_store": "search_service",
+      "collection": "customer_search_documents",
+      "records": [
+        {
+          "resource_id": "search_9401",
+          "index_name": "customer_directory_v3",
+          "document": {
+            "display_name": "Eve Tran",
+            "email": "eve.tran@example.com",
+            "customer_reference": null
+          }
+        }
+      ]
+    }
+  ]
+}

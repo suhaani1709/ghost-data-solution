@@ -16,6 +16,13 @@ REFERENCED by a unit of a linked resource (e.g. source_resource_id), and an
 id named in the details of an activity row whose resource_id is linked (e.g.
 "repopulated downstream resource ..."), both captured <= audit_at. Followed
 resources are never followed again.
+
+late_kinds enables a separate, citation-free channel (late_links): an
+observation in a file captured *after* audit_at still links when its own
+event_time is <= audit_at and the file is of a kind whose units carry real
+event timestamps (logs by default). The event happened before the audit; only
+the export is late. Such a file can never be cited, so the caller may use
+these links only where no evidence_id is needed.
 """
 import re
 from collections import defaultdict
@@ -39,9 +46,13 @@ def _utc(series):
 
 
 class Linker:
-    def __init__(self, obs, activity=None, follow=False):
+    def __init__(self, obs, activity=None, follow=False, late_kinds=()):
         usable = obs[(obs.resource_id != "") & (obs.state != "REFERENCED")]
         self._captured = _utc(usable.captured_at)
+        self._late_ok = usable.file_kind.isin(late_kinds) & (usable.event_time != "")
+        self._event = pd.Series(pd.NaT, index=usable.index, dtype="datetime64[ns, UTC]")
+        if self._late_ok.any():
+            self._event[self._late_ok] = _utc(usable.event_time[self._late_ok])
         self._index = defaultdict(list)    # token -> [row label]
         self._rows = usable
         for label, ids in zip(usable.index, usable.identifiers):
@@ -88,4 +99,24 @@ class Linker:
                         if source not in sources:
                             sources.append(source)
             out.update(followed)
+        return {k: sorted(v) for k, v in sorted(out.items())}
+
+    def late_links(self, ident, audit_at, exclude=()):
+        """{(system_id, resource_id): [file_id, ...]} linked only through files captured after
+        audit_at whose unit's own event_time is <= audit_at. Keys in `exclude` are skipped."""
+        cutoff = pd.Timestamp(audit_at)
+        cutoff = cutoff.tz_localize("UTC") if cutoff.tzinfo is None else cutoff
+        out = {}
+        for token in sorted(user_tokens(ident)):
+            for label in self._index.get(token, ()):
+                if self._captured[label] <= cutoff or not self._late_ok[label] \
+                        or self._event[label] > cutoff:
+                    continue
+                row = self._rows.loc[label]
+                key = (row.system_id, row.resource_id)
+                if key in exclude:
+                    continue
+                files = out.setdefault(key, [])
+                if row.file_id not in files:
+                    files.append(row.file_id)
         return {k: sorted(v) for k, v in sorted(out.items())}

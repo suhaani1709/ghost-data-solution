@@ -93,11 +93,17 @@ def main():
     for g in statuses:
         print(f"  {g:14s}" + "".join(f"{conf[(g, p)]:12d}" for p in statuses))
 
+    def used(c):
+        """Resources the pipeline used: evidence links plus late links (added to INCOMPLETE only)."""
+        t = pipe.trace.get(c, {})
+        late = {r[:2] for r in t.get("late", ())} if pred[c][0] == "INCOMPLETE" else set()
+        return set(t.get("linked", {})) | late
+
     def linkage(ids):
         tp = gold_n = pred_n = 0
         per = {}
         for c in ids:
-            g, p = resources(gold[c][1]), set(pipe.trace.get(c, {}).get("linked", {}))
+            g, p = resources(gold[c][1]), used(c)
             tp += len(g & p)
             gold_n += len(g)
             pred_n += len(p)
@@ -117,7 +123,7 @@ def main():
 
     failures, example = Counter(), {}
     for c in dev:
-        for f in classify_failures(c, gold[c], pred[c], pipe.trace.get(c, {}).get("linked", {}),
+        for f in classify_failures(c, gold[c], pred[c], used(c),
                                    requests.audit_at[c], pipe.obs):
             failures[f] += 1
             example.setdefault(f, c)

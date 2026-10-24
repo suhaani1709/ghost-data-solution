@@ -90,3 +90,28 @@
   UNKNOWN → DELETE, so the refusal is audited as a deletion (INCOMPLETE). Changes 0 of 518 rows today (0 UNKNOWN there),
   but it fails open on unseen text. Any fix must be re-measured on the 23 unknown sample openings (all deletions).
 - **Name channel** (`channels.py` N, diagnostic only): dev 0 gold recovered, 2 extra → precision 0.000. Names stay unused.
+
+## Session 4 (2026-10-25): late-export linking, intent fallback
+- **Baseline re-measured** before any change: identical to the session-3 report (dev exact 0.409, R 0.860;
+  held-out exact 0.000, R 0.736; 92 tests OK; output.csv byte-identical to the committed one).
+- **Late-export linking (kept, default `late_kinds=("log","json","sql","txt")`):** a unit whose own
+  event_time is <= audit_at links even if its file was captured after audit_at (central log exports,
+  service record exports). It is never cited. The resource is added only when compliant, and only to an
+  INCOMPLETE case, as a future verification with evidence_id "". So it cannot change a status or put
+  a late file id in a finding. Non-compliant late resources are skipped and counted
+  (`late_noncompliant_skipped`); a finding would need a citation. In a COMPLETE case, late resources
+  are omitted: a COMPLETE step must cite on-time evidence. Dev R 0.860→0.876, exact 0.409→0.455,
+  0 extra. Held-out R 0.736→0.792 (records part; prompted by an aggregate held-out diagnostic, so not
+  independent). 518 run: +167 steps in 116 rows, 0 status changes. Tests: `tests/test_late_links.py`,
+  own cases e/f.
+- **Intent cue fallback (kept):** UNKNOWN texts go to `intent.infer_unknown`: refusal → NON_DELETE,
+  deletion cue → DELETE, non-deletion request cue → NON_DELETE, no cue → DELETE. The tables still win.
+  23/23 unseen sample texts → DELETE. As an independent classifier it reproduces all 518 hand labels.
+  Fixes own case (a); adds case (g) (Spanish). 0 output rows change. Tests: `tests/test_intent_fallback.py`.
+- **Measured and rejected:** primary-account DELETE_RECORD rows near `reported_at`. The signal is real
+  (0–70 min before it on all dev cases), but the worker interleaves requests: precision 0.32 / 0.64 / 0.71
+  for −75/+10, −30/+10 and ±5 min windows. The zero-padded `account_00N`↔`user_0N` convention is a
+  sample artefact (3/517 eval users have two-digit ids).
+- **Remaining dev misses (15):** 9 deleted primary accounts known only from an activity row, 3 analytics
+  profiles with every identifier nulled, 2 audit records absent from all participant files, 1 absent
+  account. None has an exact identifier path left.

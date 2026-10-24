@@ -36,8 +36,16 @@ CONFIGS = {
     "replica_drift": {"follow_refs": True, "images": True, "replica_persist": "drift",
                       "activity_category": False},
     "drift+actcat": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                     "activity_category": True},                                  # default
+                     "activity_category": True},
+    "late_log": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                 "activity_category": True, "late_kinds": ("log",)},
+    "late_records": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                     "activity_category": True, "late_kinds": ("log", "json", "sql", "txt")},
 }
+# Configs before late linking existed run without it.
+for _name in ("base", "follow_refs", "images", "follow+images", "replica_any", "replica_drift",
+              "drift+actcat"):
+    CONFIGS[_name]["late_kinds"] = ()
 
 
 def resources(steps):
@@ -71,7 +79,9 @@ def evaluate(name, base_linked=None):
     pred = {r["case_id"]: (r["deletion_status"], json.loads(r["steps_json"])) for r in rows}
     gold = score.gold_cases()
     _, dev, held = score.split_ids(gold)
-    linked = {c: set(pipe.trace.get(c, {}).get("linked", {})) for c in gold}
+    linked = {c: set(pipe.trace.get(c, {}).get("linked", {}))
+              | ({r[:2] for r in pipe.trace[c].get("late", ())} if c in pipe.trace
+                 and pred[c][0] == "INCOMPLETE" else set()) for c in gold}
     out = {}
     for split, ids in (("dev", dev), ("held", held)):
         m = score.score(pred, gold, ids)

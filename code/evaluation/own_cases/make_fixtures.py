@@ -223,4 +223,120 @@ account_9302 is not linked to any user token, so it is not reported.
 2 REMEDIATION DELETE_RECORD ... ABSENT "";
 3 VERIFICATION VERIFY_RECORD_ABSENT ... ABSENT "".
 """)
+# (e) late-exported log: events before audit_at, file captured after it -------------------
+EVE = ("user_9301", "Eve Tran", "eve.tran@example.com", "+1 555 0131", "2026-03-01T10:00:00Z")
+def jline(ts, service, trace, event, **kv):
+    return ts + " " + json.dumps({"severity": "INFO", "logger": service, "service": service,
+                                  "trace_id": trace, "event": event, **kv}, separators=(",", ":")) + "\n"
+late_log = (jline("2026-07-10T08:50:00Z", "security_service", "tr-9402", "audit_record_query_started",
+                  subject_ref=EVE[0], attempt="1")
+            + jline("2026-07-10T08:50:05Z", "security_service", "tr-9402", "audit_record_read_completed",
+                    resource_id="audit_record_9402", integrity_check="passed", rows="1")
+            + jline("2026-07-10T09:30:00Z", "account_service", "tr-9403", "profile_lookup_started",
+                    lookup_key=EVE[2], attempt="1")
+            + jline("2026-07-10T09:30:02Z", "account_service", "tr-9403", "profile_lookup_completed",
+                    resource_id="account_9403", rows="0", http_status="404"))
+def search_bundle(cap, records):
+    return {"exported_at": cap, "source": "records_assurance_service", "snapshots": [
+        {"captured_at": cap, "data_store": "search_service", "collection": "customer_search_documents",
+         "records": records}]}
+def search_doc(rid, u):
+    return {"resource_id": rid, "index_name": "customer_directory_v3",
+            "document": {"display_name": u[1], "email": u[2], "customer_reference": None}}
+LATE_DERIVATION = """
+**Late-export rule (AGENTS.md §6.2, §6.6, problem_statement.md Rules).** Use only information
+available at or before audit_at, and never cite a file captured after it. The log file was
+exported after audit_at, but its trace events are timestamped before audit_at, so the facts
+existed at audit time. They can establish that the record belongs to the user, but the file
+cannot be cited. A retained SECURITY_AUDIT_LOG record (rule RETAIN) only adds a
+VERIFY_RECORD_PRESENT step. In an INCOMPLETE case, that future check carries evidence_id "",
+so it needs no citation. The trace dated after audit_at (account lookup at 09:30) is ignored.
+"""
+case("e_late_export_incomplete",
+     request=("own_e", EVE[2], "2026-07-01T08:00:00Z", "COMPLETE", "2026-07-03T09:00:00Z",
+              "2026-07-10T09:00:00Z", DELETE_TEXT),
+     identities=[EVE, BEN],
+     files=[("evidence_e1", "evidence/records/customer_data_snapshot_bundle_20260708.json",
+             "records_assurance_snapshot_bundle", "2026-07-08T12:00:00Z",
+             search_bundle("2026-07-08T12:00:00Z", [search_doc("search_9401", EVE)])),
+            ("evidence_e2", "evidence/logs/structured_service_events_eu_west_20260712.log",
+             "central_observability_export", "2026-07-12T11:00:00Z", late_log)],
+     expected=("INCOMPLETE", [
+         step(1, "FINDING", "search_service", "search_9401", "REPORT_REMAINING_RECORD", "PRESENT", "evidence_e1"),
+         step(2, "REMEDIATION", "search_service", "search_9401", "DELETE_RECORD", "ABSENT", ""),
+         step(3, "VERIFICATION", "search_service", "search_9401", "VERIFY_RECORD_ABSENT", "ABSENT", ""),
+         step(4, "VERIFICATION", "security_service", "audit_record_9402", "VERIFY_RECORD_PRESENT", "PRESENT", "")]),
+     derivation="""
+# Own case (e): late-exported log, INCOMPLETE case
+
+**Input.** A deletion request from `eve.tran@example.com` (user_9301), audit_at 2026-07-10T09:00.
+evidence_e1 (captured 2026-07-08) still holds `search_9401` with the user's email.
+evidence_e2 is a log captured 2026-07-12, after audit_at. Trace tr-9402 (08:50, before
+audit_at) queries `subject_ref=user_9301` and reads `audit_record_9402` (rows=1). Trace tr-9403
+(09:30, after audit_at) looks up the user's email, and `account_9403` returns 404.
+""" + LATE_DERIVATION + """
+**Hand derivation (written before running the pipeline).** search_9401 is a SEARCH_INDEX_ENTRY
+(rule_03 DELETE), PRESENT and cited to evidence_e1, so the case is INCOMPLETE. audit_record_9402
+is the user's retained security record, so it gets VERIFY_RECORD_PRESENT with "". account_9403
+is known only from an event after audit_at and is not reported.
+
+**Expected:** INCOMPLETE: REPORT_REMAINING_RECORD search_9401 (evidence_e1); DELETE_RECORD
+search_9401; VERIFY_RECORD_ABSENT search_9401; VERIFY_RECORD_PRESENT audit_record_9402 ("").
+""")
+
+# (f) the same late log in a case that is otherwise COMPLETE ------------------------------
+case("f_late_export_complete",
+     request=("own_f", EVE[2], "2026-07-01T08:00:00Z", "COMPLETE", "2026-07-03T09:00:00Z",
+              "2026-07-10T09:00:00Z", DELETE_TEXT),
+     identities=[EVE, BEN],
+     files=[("evidence_f1", "evidence/records/customer_data_snapshot_bundle_20260620.json",
+             "records_assurance_snapshot_bundle", "2026-06-20T12:00:00Z",
+             search_bundle("2026-06-20T12:00:00Z", [search_doc("search_9401", EVE)])),
+            ("evidence_f2", "evidence/records/customer_data_snapshot_bundle_20260708.json",
+             "records_assurance_snapshot_bundle", "2026-07-08T12:00:00Z",
+             search_bundle("2026-07-08T12:00:00Z", [])),
+            ("evidence_f3", "evidence/logs/structured_service_events_eu_west_20260712.log",
+             "central_observability_export", "2026-07-12T11:00:00Z", late_log)],
+     expected=("COMPLETE", [
+         step(1, "VERIFICATION", "search_service", "search_9401", "VERIFY_RECORD_ABSENT", "ABSENT", "evidence_f2")]),
+     derivation="""
+# Own case (f): late-exported log, COMPLETE case
+
+**Input.** The same user and the same late log as case (e) (here evidence_f3, captured after
+audit_at). evidence_f1 (2026-06-20) holds `search_9401` with the user's email. evidence_f2
+(2026-07-08) is a covering search_service snapshot without it.
+""" + LATE_DERIVATION + """
+**Hand derivation (written before running the pipeline).** search_9401 is ABSENT at audit_at,
+cited to evidence_f2, so it is compliant and the case is COMPLETE. In a COMPLETE case every
+verification step must cite evidence captured at or before audit_at. audit_record_9402 is
+evidenced only by evidence_f3, captured after audit_at, so no valid citation exists. It is
+omitted rather than cited to a late file or given an invented citation. It cannot change the
+status either way, because it is retained and compliant.
+
+**Expected:** COMPLETE: VERIFY_RECORD_ABSENT search_9401 (evidence_f2).
+""")
+
+# (g) refusal of deletion in an unseen language ---------------------------------------------
+case("g_spanish_refusal",
+     request=("own_g", ADA[2], "2026-05-02T08:00:00Z", "NOT_STARTED", "2026-05-02T09:00:00Z",
+              "2026-05-20T00:00:00Z", "Por favor, no eliminen mi cuenta. Todavía la uso para mis pedidos."),
+     identities=[ADA, BEN],
+     files=[("evidence_g1", "evidence/records/customer_data_snapshot_bundle_20260501.json",
+             "records_assurance_snapshot_bundle", "2026-05-01T12:00:00Z",
+             {"exported_at": "2026-05-01T12:00:00Z", "source": "records_assurance_service", "snapshots": [
+                 {"captured_at": "2026-05-01T08:00:00Z", "data_store": "account_service",
+                  "collection": "customer_profiles", "records": [profile("account_9001", ADA)]}]})],
+     expected=("NOT_APPLICABLE", []),
+     derivation="""
+# Own case (g): refusal of deletion in Spanish (unseen wording)
+
+**Input.** "Por favor, no eliminen mi cuenta. Todavía la uso para mis pedidos." ("Please do not
+delete my account. I still use it for my orders.") A live profile row exists in evidence_g1.
+
+**Hand derivation (written before running the pipeline).** §6.5: the text explicitly refuses
+deletion, so nothing is authorized. The answer is NOT_APPLICABLE with `[]`. The text is in none
+of the sentence tables, so this tests the cue fallback, which must fail closed.
+
+**Expected:** `own_g,NOT_APPLICABLE,[]`
+""")
 print("fixtures written to", OWN)

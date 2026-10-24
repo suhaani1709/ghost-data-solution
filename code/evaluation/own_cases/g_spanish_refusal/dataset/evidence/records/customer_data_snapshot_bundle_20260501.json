@@ -1,0 +1,22 @@
+{
+  "exported_at": "2026-05-01T12:00:00Z",
+  "source": "records_assurance_service",
+  "snapshots": [
+    {
+      "captured_at": "2026-05-01T08:00:00Z",
+      "data_store": "account_service",
+      "collection": "customer_profiles",
+      "records": [
+        {
+          "resource_id": "account_9001",
+          "user_id": "user_9001",
+          "full_name": "Ada Quill",
+          "email": "ada.quill@example.com",
+          "phone": "+1 555 0101",
+          "account_status": "ACTIVE",
+          "updated_at": "2026-04-30T10:00:00Z"
+        }
+      ]
+    }
+  ]
+}

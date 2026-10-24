@@ -4,7 +4,7 @@ This report covers the final full-dataset run that produced `output.csv` (`pytho
 518 requests).
 
 **The run makes zero model API calls.** Every step is deterministic Python (stdlib + pandas):
-request intent (sentence tables in `code/ghost/intent.py`), identity resolution, evidence parsing,
+request intent (sentence tables plus a regex cue fallback for unseen wording, in `code/ghost/intent.py`), identity resolution, evidence parsing,
 linking, state reconstruction, policy mapping and step planning. The code imports no model SDK,
 opens no network connection and reads no API key or environment secret.
 
@@ -16,7 +16,7 @@ opens no network connection and reads no API key or environment secret.
 | **overall** | | **0** | **0** | **0** | **0** | **0** | **$0.00** | **$0.00** |
 
 Only one "model" row exists because no model is used, so the per-model and overall totals coincide.
-The run takes about 4 seconds on a laptop CPU.
+The run takes about 2 seconds on a laptop CPU (1.6 s measured, peak RSS 140 MB).
 
 ## Model use during development (not part of the run above)
 

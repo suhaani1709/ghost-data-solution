@@ -148,15 +148,78 @@ def classify_requests(requests):
     return labels, unknown
 
 
+# Cue fallback for texts the tables do not cover (UNKNOWN only; table matches never reach it).
+# 1. A refusal of deletion in request form ("do not delete", "not asking for deletion",
+#    "keep my account", "I still use it") -> NON_DELETE. Past-tense reports ("it was not
+#    deleted") are not refusals, so only base verb forms follow an imperative negator.
+_DEL_VERB = r"(?:delete|erase|remove|close|deactivate|wipe|cancel)"
+_DEL_ANY = (r"(?:delet|eras|remov|clos|deactivat|wip|forget\s+me|"
+            r"elimin|borr|cerr|exclu|apag|encerr|supprim|effac|ferm|lösch|削除|삭제)")
+REFUSAL_CUES = [re.compile(p, re.I) for p in (
+    r"\b(?:do\s+not|don't|dont|never|please\s+not)\s+(?:\w+\s+){0,2}?" + _DEL_VERB + r"\b",
+    r"\bnot\s+(?:asking|requesting|request(?:ing)?\s+for|want(?:ing)?|looking)\s+(?:\w+\s+){0,3}?"
+    r"(?:delet|eras|remov|clos)",
+    r"\bnot\s+a\s+(?:deletion\s+)?request\s+(?:to|for)\s+(?:\w+\s+){0,1}?(?:delet|eras|remov|clos)",
+    r"\bwithout\s+(?:\w+\s+){0,1}?(?:delet|eras|remov|clos)\w*",
+    r"\b(?:don't|do\s+not)\s+want\s+(?:\w+\s+){0,3}?(?:delet|eras|remov|clos)",
+    r"\b(?:keep|leave)\s+(?:my|the|this)\s+(?:account|profile)\b(?!\s+reference)",
+    r"\bstill\s+(?:use|need|want)\s+(?:it|my\s+account|the\s+account|this\s+account)\b",
+    r"\bcontinue\s+using\b",
+    r"\bno\s+(?:\w+\s+){0,2}?(?:elimin|borr|cierr|cerr)\w*",          # es
+    r"\bnão\s+(?:\w+\s+){0,2}?(?:exclu|apag|encerr)\w*",              # pt
+    r"\bne\s+(?:\w+\s+){0,2}?(?:supprim|effac|ferm)\w*\s+pas\b",      # fr
+    r"\bne\s+pas\s+(?:\w+\s+){0,1}?(?:supprim|effac|ferm)\w*",        # fr infinitive
+    r"\bpas\s+de\s+suppression\b",
+    r"削除しない|削除は不要|削除しないで",                                  # ja
+    r"삭제하지|삭제를\s*원하지\s*않",                                     # ko
+)]
+# 2. Other request types; they decide only when no deletion cue is present (or the cue sits in
+#    a marketing-only clause, e.g. "remove me from marketing lists only").
+SCOPED_REMOVAL = re.compile(r"\b(?:marketing|promotional|newsletter|mailing)\b[^.?!]*\bonly\b|"
+                            r"\bonly\b[^.?!]*\b(?:marketing|promotional|newsletter|mailing)\b|"
+                            r"\b(?:remove|unsubscribe)\s+me\s+from\s+(?:the\s+)?(?:marketing|"
+                            r"promotional|mailing|newsletter)", re.I)
+OTHER_REQUEST_CUES = [re.compile(p, re.I) for p in (
+    r"\bunsubscribe\b|\bopt(?:-|\s)?out\b|\bstop\s+(?:sending\s+)?(?:the\s+)?(?:promotional|marketing)",
+    r"\b(?:update|correct|fix|change|replace)\s+(?:my|the|it|this)\b|\bout\s+of\s+date\b|\bmisspel",
+    r"\bcopy\s+of\b|\bdownload\s+(?:my|a\s+copy)|\bportable\s+format\b|"
+    r"\bwhat\s+(?:personal\s+)?(?:information|data)\s+(?:you|do\s+you)\s+hold\b",
+    r"\breset\b.*\b(?:password|login)\b|\bcan't\s+(?:access|log)|\bcannot\s+(?:access|log)",
+)]
+DELETE_CUE = re.compile(_DEL_ANY, re.I)
+
+
+def infer_unknown(text):
+    """(label, reason) for a text the tables do not cover. Never returns UNKNOWN."""
+    norm = normalize(text)
+    for cue in REFUSAL_CUES:
+        m = cue.search(norm)
+        if m:
+            return NON_DELETE, f"refusal cue {m.group(0)!r}"
+    unscoped = SCOPED_REMOVAL.sub(" ", norm)
+    deletion = DELETE_CUE.search(unscoped)
+    if deletion:
+        return DELETE, f"deletion cue {deletion.group(0)!r}"
+    for cue in OTHER_REQUEST_CUES:
+        m = cue.search(norm)
+        if m:
+            return NON_DELETE, f"non-deletion request cue {m.group(0)!r}"
+    if SCOPED_REMOVAL.search(norm):
+        return NON_DELETE, "marketing-only removal"
+    # No cue either way: this intake is the deletion channel (all 32 samples are deletions,
+    # 23 of them with openings outside the tables), so a cue-less text stays a deletion.
+    return DELETE, "no cue; deletion-intake default"
+
+
 def effective_intent(text):
     """DELETE or NON_DELETE for the pipeline. The strict classify() is unchanged.
 
-    UNKNOWN falls back to DELETE (every deletion-request channel in the data is
-    a deletion intake; all 32 samples are deletions) and logs a warning so the
-    text can be reviewed and added to the tables.
+    Table matches are final. An UNKNOWN text goes to infer_unknown(): a refusal of
+    deletion or a non-deletion request is NON_DELETE (fails closed); otherwise DELETE.
+    Each fallback decision is logged so the text can be reviewed and added to the tables.
     """
     label, reason = classify(text)
     if label == UNKNOWN:
-        log.warning("intent UNKNOWN, defaulting to DELETE: %s", reason)
-        return DELETE
+        label, why = infer_unknown(text)
+        log.warning("intent UNKNOWN (%s) -> %s by %s", reason, label, why)
     return label
