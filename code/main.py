@@ -18,13 +18,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ghost import identity, intent, linking, loaders, observations, planner, state  # noqa: E402
+from ghost import account_finder, identity, intent, linking, loaders, observations, planner, state  # noqa: E402
 
 
 class Pipeline:
     def __init__(self, dataset_dir=None, follow_refs=True, images=True, replica_persist="drift",
-                 activity_category=True):
-        self.obs = observations.build_observations(dataset_dir, images=images)
+                 activity_category=True, find_account=True, table_coverage=True):
+        self.obs = observations.build_observations(dataset_dir, images=images,
+                                                   table_coverage=table_coverage)
         self.index = identity.IdentityIndex.from_dataset(dataset_dir)
         activity = loaders.load_system_activity(dataset_dir)
         rules = loaders.load_deletion_rules(dataset_dir)
@@ -35,6 +36,7 @@ class Pipeline:
             activity=activity if activity_category else None,
             actions=dict(zip(rules.data_category, rules.required_action)))
         self.treatments = planner.load_treatments(rules)
+        self.finder = account_finder.AccountFinder(self.obs, activity) if find_account else None
         self.stats = Counter()
         self.coercions = Counter()
         self.trace = {}   # case_id -> {"linked": {...}, "resources": [...]}
@@ -49,6 +51,11 @@ class Pipeline:
             linked = {}
         else:
             linked = self.linker.link(self.index.sets[res.user_id], case.audit_at)
+            if self.finder is not None and account_finder.needs_account(linked):
+                pick = self.finder.find(self.index.sets[res.user_id], case.reported_at, case.audit_at)
+                if pick is not None:
+                    self.stats["account_found"] += 1
+                    linked = dict(sorted({**linked, ("account_service", pick[0]): [pick[1]]}.items()))
         resources = []
         for (system_id, resource_id) in linked:
             category = self.resolver.category(system_id, resource_id, case.audit_at)

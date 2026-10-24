@@ -67,7 +67,7 @@ python3 code/main.py --dataset DIR --out /tmp/pred.csv          # any directory 
 python3 -m unittest discover -s code/tests                      # all unit + oracle tests
 python3 code/evaluation/validate.py output.csv                  # output contract check (exit 0 = valid)
 python3 code/evaluation/score.py                                # status / step / field / sequence accuracy on the 32 samples
-python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat
+python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat account table_cover account+cover
 python3 code/evaluation/breakdown.py                            # failure breakdown (linking recall/precision)
 python3 code/evaluation/channels.py                             # rejected linking channels and their precision
 python3 code/evaluation/run_own_cases.py                        # the hand-built cases in code/evaluation/own_cases/

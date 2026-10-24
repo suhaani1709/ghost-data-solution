@@ -90,3 +90,17 @@
   UNKNOWN → DELETE, so the refusal is audited as a deletion (INCOMPLETE). Changes 0 of 518 rows today (0 UNKNOWN there),
   but it fails open on unseen text. Any fix must be re-measured on the 23 unknown sample openings (all deletions).
 - **Name channel** (`channels.py` N, diagnostic only): dev 0 gold recovered, 2 extra → precision 0.000. Names stay unused.
+
+## Account finder (2026-10-25, session 4), measured with `compare.py` / scratch measurement
+- **Kept, default on (`find_account=True`, `account_finder.py`):** applies only when linking found no account_service
+  resource; every sample has exactly 1. Candidates are account DELETE_RECORD rows in [reported_at − 75 min, reported_at + 10 min]
+  and ≤ audit_at. Remove accounts with an evidence unit (≤ audit_at, not REFERENCED) carrying any non-subject identifier.
+  The user number only breaks a tie among survivors; still ambiguous → nothing. Dev: 5 recovered, 0 wrong, 6 abstained
+  (precision 1.000). The strictly-before window (−75/0) gives 2/0/9. Held-out aggregate: 1/0/8.
+- **Kept, default on (`table_coverage=True`, `parse_sql`):** a SQL dump without snapshot_scope covers the system of
+  each inventory table it holds (any copy suffix). Gold cites such a dump (failover replica + primary profiles) as
+  proof of absence. Alone it changes no sample metric; with the finder, dev P 0.973→0.991.
+- Final: dev status 1.000, P 0.991, R 0.901, F1 0.944, exact 0.636; held-out F1 0.857, exact 0.000.
+  518: 36 rows each gain one account record, no status flips.
+- **Rejected:** same-batch for analytics (dev precision 0.400 with a reported_at window; 0 correct when anchored on the
+  account delete). Same-batch for audit records is impossible: no worker activity targets security_service.

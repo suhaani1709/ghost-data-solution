@@ -7,6 +7,12 @@ file whose header says so) with "replica" in its name is copy=replica, one
 with "primary" is copy=primary. snapshot_scope rows are coverage metadata,
 not records: every in-scope system gets one resource-less unit, so any of
 its resources missing from the snapshot's rows is provably absent there.
+
+table_coverage=True: a dump without snapshot_scope still covers the system of
+each inventory table it contains (customer_profiles, customer_profiles_primary,
+customer_profiles_failover_replica, ...), one resource-less unit per (system,
+copy) at the header's capture time: a point-in-time dump of that table proves
+a resource not in it was absent there.
 """
 import json
 import re
@@ -15,6 +21,8 @@ import sqlite3
 from . import parse_common as pc
 
 TOPOLOGY = re.compile(r"^-- Database topology:\s*(\S+)", re.M)
+CAPTURED = re.compile(r"^-- Captured at:\s*(\S+)", re.M)
+COPY_SUFFIX = re.compile(r"_(primary|failover_replica|read_replica|reporting_replica|replica(_\w+)?)$")
 SKIP_TABLES = {"snapshot_scope"}
 # Inventory tables -> owning system, to match snapshot_scope.origin_system.
 TABLE_SYSTEMS = {
@@ -36,12 +44,10 @@ def _copy(table, topology):
 
 
 def _table_category(table):
-    name = re.sub(r"_(primary|failover_replica|read_replica|reporting_replica|replica(_\w+)?)$",
-                  "", table)
-    return pc.CATEGORY_BY_COLLECTION.get(name, "")
+    return pc.CATEGORY_BY_COLLECTION.get(COPY_SUFFIX.sub("", table), "")
 
 
-def parse_sql(path):
+def parse_sql(path, table_coverage=False):
     script = path.read_text(encoding="utf-8")
     top = TOPOLOGY.search(script)
     topology = top.group(1) if top else ""
@@ -66,6 +72,8 @@ def parse_sql(path):
                 out += _row_units(table, dict(zip(cols, row)), copy)
             if TABLE_SYSTEMS.get(table) in scope:
                 table_of[TABLE_SYSTEMS[table]] = (table, len(rows), copy)
+        if table_coverage and not scope:
+            out += _table_coverage(tables, topology, CAPTURED.search(script))
         for system in sorted(scope):
             table, n, copy = table_of.get(system, ("", 0, _copy("", topology)))
             out.append(pc.make_unit(
@@ -75,6 +83,19 @@ def parse_sql(path):
         return out
     finally:
         con.close()
+
+
+def _table_coverage(tables, topology, captured):
+    when = captured.group(1) if captured else ""
+    seen = set()
+    for table in tables:
+        system = TABLE_SYSTEMS.get(COPY_SUFFIX.sub("", table))
+        key = (system, _copy(table, topology))
+        if system and key not in seen:
+            seen.add(key)
+    return [pc.make_unit(system_id=s, resource_id="", category_hint="", state="",
+                         text=f"table snapshot {s} ({c}) {when}", copy=c, event_time=when)
+            for s, c in sorted(seen)]
 
 
 def _row_units(table, row, copy):

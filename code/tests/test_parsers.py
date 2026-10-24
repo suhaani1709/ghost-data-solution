@@ -163,6 +163,26 @@ class SqlParserTest(unittest.TestCase):
         self.assertEqual((u["category_hint"], u["state"]), ("ACCOUNT_TOMBSTONE", "REDACTED"))
         self.assertEqual(u["identifiers"]["user_ids"], ["user_5"])
 
+    def test_inventory_tables_cover_their_system_only_with_table_coverage(self):
+        cols = "(resource_id TEXT, user_id TEXT, email TEXT, updated_at TEXT)"
+        sql = ("-- Captured at: 2026-09-02T23:00:00Z\n-- Database topology: failover_replica\n"
+               f"CREATE TABLE customer_profiles_primary {cols};\n"
+               f"CREATE TABLE customer_profiles_failover_replica {cols};\n"
+               "INSERT INTO customer_profiles_failover_replica VALUES ('account_5','user_5',"
+               "'a@example.com','2026-09-02T22:45:00Z');\n"
+               f"CREATE TABLE customer_data_replica_eu_west {cols};\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "x.sql"
+            p.write_text(sql, encoding="utf-8")
+            plain = parse_sql.parse_sql(p)
+            covered = parse_sql.parse_sql(p, table_coverage=True)
+        cover = lambda units: sorted((u["system_id"], u["copy"], u["event_time"]) for u in units
+                                     if u["resource_id"] == "")
+        self.assertEqual(cover(plain), [])
+        self.assertEqual(cover(covered), [("account_service", "primary", "2026-09-02T23:00:00Z"),
+                                          ("account_service", "replica", "2026-09-02T23:00:00Z")])
+        self.assertEqual([u for u in covered if u["resource_id"]], [u for u in plain if u["resource_id"]])
+
 
 class EvidenceAcceptanceTest(unittest.TestCase):
     def test_columns(self):

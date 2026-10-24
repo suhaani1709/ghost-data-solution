@@ -24,19 +24,25 @@ from ghost import loaders  # noqa: E402
 
 CONFIGS = {
     "base": {"follow_refs": False, "images": False,
-             "replica_persist": "off", "activity_category": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
     "follow_refs": {"follow_refs": True, "images": False,
-             "replica_persist": "off", "activity_category": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
     "images": {"follow_refs": False, "images": True,
-             "replica_persist": "off", "activity_category": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
     "follow+images": {"follow_refs": True, "images": True, "replica_persist": "off",
-                      "activity_category": False},
+                      "activity_category": False, "find_account": False, "table_coverage": False},
     "replica_any": {"follow_refs": True, "images": True, "replica_persist": "any",
-                    "activity_category": False},
+                    "activity_category": False, "find_account": False, "table_coverage": False},
     "replica_drift": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                      "activity_category": False},
+                      "activity_category": False, "find_account": False, "table_coverage": False},
     "drift+actcat": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                     "activity_category": True},                                  # default
+                     "activity_category": True, "find_account": False, "table_coverage": False},
+    "account": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                "activity_category": True, "find_account": True, "table_coverage": False},
+    "table_cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                    "activity_category": True, "find_account": False, "table_coverage": True},
+    "account+cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                      "activity_category": True, "find_account": True, "table_coverage": True},   # default
 }
 
 
