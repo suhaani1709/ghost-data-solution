@@ -53,7 +53,8 @@ def build_observations(dataset_dir=None, images=False):
         parser = parsers.get(kind)
         if parser is None:
             raise ValueError(f"no parser for {f.file_path}")
-        for unit in parser(dataset_dir / f.file_path):
+        extra = {"file_id": f.file_id} if kind == "pdf" else {}   # committed-text fallback
+        for unit in parser(dataset_dir / f.file_path, **extra):
             rows.append({"file_id": f.file_id, "captured_at": f.captured_at, "file_kind": kind,
                          "referenced_by": "", **unit})
     return pd.DataFrame(rows, columns=COLUMNS)

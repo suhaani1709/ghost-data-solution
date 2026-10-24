@@ -1,0 +1,2 @@
+case_id,email,requested_at,reported_status,reported_at,audit_at,request_text
+own_c,cora.vance@example.com,2026-06-10T08:00:00Z,COMPLETE,2026-06-19T09:00:00Z,2026-07-10T00:00:00Z,I would like to submit a request to delete this account and its personal data.

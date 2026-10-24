@@ -13,21 +13,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ghost import loaders  # noqa: E402
+from ghost import loaders, planner  # noqa: E402
 
+STATEMENT = loaders.REPO_ROOT / "problem_statement.md"   # not in code.zip; table test skips then
 PHASES = ["FINDING", "REMEDIATION", "VERIFICATION"]
 STEP_FIELDS = {"step_no", "phase", "system_id", "resource_id", "operation", "state", "evidence_id"}
 
 
 def operation_table():
     """[(phase, operation, state)] in the order of problem_statement.md."""
-    text = (loaders.REPO_ROOT / "problem_statement.md").read_text(encoding="utf-8")
+    text = STATEMENT.read_text(encoding="utf-8")
     rows = re.findall(r"^\| `(FINDING|REMEDIATION|VERIFICATION)` \| `(\w+)` \| `(\w+)` \|", text, re.M)
     assert len(rows) == 15, rows
     return rows
 
 
-OP_ORDER = {op: i for i, (_, op, _) in enumerate(operation_table())}
+OP_ORDER = {op: i for i, (_, op, _) in
+            enumerate(operation_table() if STATEMENT.is_file() else planner.OPERATIONS)}
 
 
 def sort_key(step):
@@ -85,8 +87,8 @@ class SampleOrderTests(unittest.TestCase):
 
 
 class PlannerOracleTests(unittest.TestCase):
+    @unittest.skipUnless(STATEMENT.is_file(), "problem_statement.md not present (e.g. unpacked code.zip)")
     def test_planner_operation_table_matches_problem_statement(self):
-        from ghost import planner
         self.assertEqual(list(planner.OPERATIONS), operation_table())
 
     def test_build_steps_reproduces_samples(self):

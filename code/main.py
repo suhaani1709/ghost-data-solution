@@ -6,6 +6,7 @@ linked resources; PNG evidence comes from code/image_transcripts.md.
 
 Run:  python3 code/main.py                       # 518 cases -> output.csv at the repo root
       python3 code/main.py --sample --out PATH   # the 32 public sample requests
+      python3 code/main.py --dataset DIR --out PATH   # another dataset/ layout (own cases)
 """
 import argparse
 import csv
@@ -91,11 +92,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sample", action="store_true", help="run the 32 sample requests")
     ap.add_argument("--out", default=None, help="output CSV (default: repo-root output.csv)")
+    ap.add_argument("--dataset", default=None, help="dataset directory (default: repo-root dataset/)")
     args = ap.parse_args(argv)
-    logging.basicConfig(level=logging.ERROR)
-    requests = loaders.load_sample_requests() if args.sample else loaders.load_deletion_requests()
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    load = loaders.load_sample_requests if args.sample else loaders.load_deletion_requests
+    requests = load(args.dataset)
     out = Path(args.out) if args.out else loaders.REPO_ROOT / "output.csv"
-    pipe = Pipeline()
+    pipe = Pipeline(dataset_dir=args.dataset)
     rows = pipe.run(requests)
     write_output(rows, out)
     print(f"wrote {len(rows)} rows -> {out}")

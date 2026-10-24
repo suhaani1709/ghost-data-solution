@@ -57,7 +57,7 @@ def invalid_rows(pipe, main_mod):
         path = Path(d) / "output.csv"
         main_mod.write_output(rows, path)
         act = loaders.load_system_activity()
-        _, _, _, bad = validate.validate(path, loaders.load_deletion_requests(),
+        _, _, _, bad, _ = validate.validate(path, loaders.load_deletion_requests(),
                                          loaders.load_evidence_files(),
                                          set(loaders.load_user_audit_log().audit_id),
                                          dict(zip(act.activity_id, act.event_time)))

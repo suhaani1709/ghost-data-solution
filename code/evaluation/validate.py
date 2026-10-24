@@ -1,7 +1,10 @@
 """Contract check for an output CSV (problem_statement.md / AGENTS.md §6.3-6.6).
 
 Run:  python3 code/evaluation/validate.py output.csv [--sample]
-Exit code 0 when every check passes. Prints one line per failed check type.
+Exit code 0 when every check passes. Prints one line per failed check type,
+then one line per warning type (warnings do not make a row invalid).
+COMPLETE with steps [] is a warning: problem_statement.md allows it (the
+zero-link rule, NOTES.md); INCOMPLETE with [] is an error.
 """
 import argparse
 import csv
@@ -22,6 +25,7 @@ def validate(path, requests, manifest, audit_ids, activity_times):
     errors = Counter()
     examples = {}
     bad = set()     # case_ids of rows with at least one failed check
+    warnings = Counter()
 
     def err(kind, case_id):
         errors[kind] += 1
@@ -55,8 +59,11 @@ def validate(path, requests, manifest, audit_ids, activity_times):
         status = r["deletion_status"]
         if status == "NOT_APPLICABLE" and steps:
             err("NOT_APPLICABLE with steps", cid)
-        if status in ("COMPLETE", "INCOMPLETE") and not steps:
-            err(f"{status} with no steps", cid)
+        if status == "INCOMPLETE" and not steps:
+            err("INCOMPLETE with no steps", cid)
+        if status == "COMPLETE" and not steps:
+            warnings["COMPLETE with no steps"] += 1
+            examples.setdefault("COMPLETE with no steps", cid)
         phase_idx = -1
         for i, st in enumerate(steps, 1):
             if not isinstance(st, dict) or set(st) != STEP_KEYS:
@@ -90,7 +97,7 @@ def validate(path, requests, manifest, audit_ids, activity_times):
                     err("unknown evidence_id", cid)
             elif ev:
                 err("future step with evidence_id", cid)
-    return len(rows), errors, examples, bad
+    return len(rows), errors, examples, bad, warnings
 
 
 def main(argv=None):
@@ -100,16 +107,18 @@ def main(argv=None):
     args = ap.parse_args(argv)
     requests = loaders.load_sample_requests() if args.sample else loaders.load_deletion_requests()
     activity = loaders.load_system_activity()
-    n, errors, examples, bad = validate(args.path, requests, loaders.load_evidence_files(),
+    n, errors, examples, bad, warnings = validate(args.path, requests, loaders.load_evidence_files(),
                                    set(loaders.load_user_audit_log().audit_id),
                                    dict(zip(activity.activity_id, activity.event_time)))
     if not errors:
-        print(f"VALID: {n} rows, all checks passed")
-        return 0
-    print(f"INVALID: {len(bad)} of {n} rows")
-    for kind, count in errors.most_common():
-        print(f"  {count:4d}  {kind}  (e.g. {examples[kind]})")
-    return 1
+        print(f"VALID: {n} rows, all checks passed (invalid rows: 0)")
+    else:
+        print(f"INVALID: {len(bad)} of {n} rows")
+        for kind, count in errors.most_common():
+            print(f"  {count:4d}  {kind}  (e.g. {examples[kind]})")
+    for kind, count in warnings.most_common():
+        print(f"  WARNING {count:4d}  {kind}  (e.g. {examples[kind]})")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

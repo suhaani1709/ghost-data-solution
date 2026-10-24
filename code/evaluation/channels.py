@@ -9,6 +9,9 @@ top of the pipeline's evidence-linked set L:
   B  LINK_RESOURCE_IDENTITY rows (<= audit_at) naming one of the user's tokens
   C  A restricted to source_system == deletion_worker
   D  resource-number convention: resource suffix (<= 3 digits) == user number
+  N  name channel: an evidence unit of the resource (<= audit_at, not a mere
+     REFERENCED mention) whose raw_snippet contains the user's full name
+     (exact substring; snippets are cut at 200 chars, so this undercounts)
 Reported on dev(22): activity-only gold recovered, extra (wrong) resources
 added, resulting linkage recall / precision, extras that are other dev
 cases' gold resources. Held-out(10): aggregates only.
@@ -42,6 +45,8 @@ class Channels:
             sys_of.setdefault(rid, s)
         self.sys_of = sys_of
         self.universe = obs[obs.resource_id != ""][["resource_id", "captured_at"]]
+        self.named = obs[(obs.resource_id != "") & (obs.state != "REFERENCED")][
+            ["system_id", "resource_id", "captured_at", "raw_snippet"]]
 
     def key(self, rid):
         return (self.sys_of.get(rid, ""), rid)
@@ -72,6 +77,13 @@ class Channels:
                 out.add(self.key(rid))
         return out
 
+    def N(self, ident, case):
+        if not ident.name:
+            return set()
+        u = self.named[self.named.captured_at <= case.audit_at]
+        hit = u[u.raw_snippet.str.contains(ident.name, regex=False)]
+        return set(zip(hit.system_id, hit.resource_id))
+
 
 def main():
     gold = score.gold_cases()
@@ -97,16 +109,17 @@ def main():
         p0 = sum(len(base[c]) for c in ids)
         print(f"{name}: gold={n_gold} activity-only gold={n_ao}")
         print(f"  {'chan':4s} {'recov':>6s} {'extra':>6s} {'xOther':>6s} {'recall':>7s} {'prec':>6s}"
-              f" {'chanP':>6s}")
+              f" {'chanP':>6s} {'newG':>5s} {'newP':>6s}")
         print(f"  {'base':4s} {'-':>6s} {'-':>6s} {'-':>6s} {tp0 / n_gold:7.3f} {tp0 / max(p0, 1):6.3f}")
-        for cname in "ABCD":
-            rec = extra = xother = tp = pn = 0
+        for cname in "ABCDN":
+            rec = extra = xother = tp = pn = newg = 0
             for c in ids:
                 case = requests.loc[c]
                 res = pipe.index.resolve_request(case)
                 prop = getattr(ch, cname)(pipe.index.sets[res.user_id], case) if res.user_id else set()
                 new = prop - base[c]
                 rec += len(new & ao[c])
+                newg += len(new & g_all[c])
                 ex = new - g_all[c]
                 extra += len(ex)
                 xother += len(ex & others_gold[c])
@@ -115,12 +128,13 @@ def main():
                 pn += len(merged)
             chan_p = rec / max(rec + extra, 1)
             print(f"  {cname:4s} {rec:6d} {extra:6d} {xother:6d} {tp / n_gold:7.3f} {tp / max(pn, 1):6.3f}"
-                  f" {chan_p:6.3f}")
+                  f" {chan_p:6.3f} {newg:5d} {newg / max(newg + extra, 1):6.3f}")
 
     run(dev, "dev(22)")
     run(held, "held-out(10)")
     print("recov=activity-only gold newly linked; extra=new non-gold; xOther=extras that are "
-          "other cases' gold (same split); chanP=recov/(recov+extra)")
+          "other cases' gold (same split); chanP=recov/(recov+extra); newG=any gold newly linked; "
+          "newP=newG/(newG+extra)")
 
 
 if __name__ == "__main__":

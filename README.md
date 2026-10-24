@@ -12,6 +12,82 @@ Read [`problem_statement.md`](./problem_statement.md) for the complete challenge
 
 ---
 
+## Solution: setup and run
+
+The deletion-audit agent is a deterministic Python pipeline in `code/`. It makes **no model or
+network calls at run time** and needs no API key (see `code/evaluation/usage_report.md`).
+
+```text
+code/main.py            entry point: intent -> identity -> linking -> state -> policy -> steps
+code/ghost/             loaders, identity, intent tables, evidence parsers, linker, state, planner
+code/image_transcripts.md   hand transcript of the 11 PNG screenshots (read at run time; no OCR)
+code/pdf_text/          committed `pdftotext -layout` text of the 4 PDFs (fallback, see below)
+code/tests/             unit tests (synthetic frames) + sample oracle tests
+code/evaluation/        scorer, validator, diagnostics, own test cases, evaluation and usage reports
+code/NOTES.md           working notes: every rule, its evidence and its measured effect
+```
+
+### Setup
+
+- Python 3 (developed and tested only on 3.13.13) and **pandas** (tested on 3.0.2). Nothing else from pip; the
+  rest is the standard library (`sqlite3`, `json`, `csv`, `hashlib`, `re`, `subprocess`).
+
+  ```bash
+  python3 -m pip install pandas
+  ```
+
+- **Optional:** `pdftotext` from poppler (`brew install poppler`, `apt-get install poppler-utils`).
+  If it is on `PATH`, the four PDFs are read with `pdftotext -layout`. If it is missing, the run does
+  not fail. Each PDF is read from the committed `code/pdf_text/<file_id>.md` instead, and one line per
+  PDF is logged: `WARNING ghost.parse_common: pdftotext not found; using committed text ...`.
+  Both paths produce a byte-identical `output.csv` (tested in `code/tests/test_pdf_fallback.py`).
+  To regenerate the committed text after a dataset change, run `python3 code/ghost/parse_pdf.py --write-text`
+  (this needs pdftotext).
+
+### Run
+
+From the repository root, with `dataset/` in place:
+
+```bash
+python3 code/main.py
+```
+
+This writes **`output.csv` at the repository root**: 518 rows sorted by `case_id`, with header
+`case_id,deletion_status,steps_json`. The run takes about 4 s, and repeated runs are byte-identical.
+Other modes:
+
+```bash
+python3 code/main.py --sample --out /tmp/sample_pred.csv        # the 32 public sample requests
+python3 code/main.py --dataset DIR --out /tmp/pred.csv          # any directory with the dataset/ schema
+```
+
+### Tests and evaluation
+
+```bash
+python3 -m unittest discover -s code/tests                      # all unit + oracle tests
+python3 code/evaluation/validate.py output.csv                  # output contract check (exit 0 = valid)
+python3 code/evaluation/score.py                                # status / step / field / sequence accuracy on the 32 samples
+python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat
+python3 code/evaluation/breakdown.py                            # failure breakdown (linking recall/precision)
+python3 code/evaluation/channels.py                             # rejected linking channels and their precision
+python3 code/evaluation/run_own_cases.py                        # the hand-built cases in code/evaluation/own_cases/
+```
+
+`score.py` reports the first 22 samples (by `case_id`) as **dev** and the last 10 as **held-out**.
+Results, failures and what was tried are in `code/evaluation/evaluation_report.md`. The same reports
+are mirrored to `evaluation/` because `problem_statement.md` and `AGENTS.md` name that path.
+
+### Package
+
+```bash
+zip -r code.zip README.md code evaluation -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
+```
+
+This is the command from "Packaging `code.zip`" below, with `evaluation` added as that section allows
+for a top-level `evaluation/` directory.
+
+---
+
 ## Quick Start
 
 Clone the repository and move into the project directory:

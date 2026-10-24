@@ -9,8 +9,18 @@ States (normalized): PRESENT, ABSENT, IDENTIFIABLE, ANONYMIZED, REDACTED,
 ACTIVE, DISABLED, BLOCKED, REFERENCED (id only mentioned by another record),
 or "" when the unit does not say.
 """
+import logging
 import re
+import shutil
 import subprocess
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+# Committed `pdftotext -layout` output, one <file_id>.md per PDF (fallback when
+# the binary is missing). Regenerate: python3 code/ghost/parse_pdf.py --write-text
+PDF_TEXT_DIR = Path(__file__).resolve().parents[1] / "pdf_text"
+PAGE_MARK = re.compile(r"^<!-- page \d+ -->\n", re.M)
 
 RESOURCE_PREFIXES = ("audit_record", "data_flow", "email_delivery", "legal_hold", "tombstone",
                      "account", "analytics", "search", "support", "backup", "export",
@@ -192,11 +202,33 @@ def reference_units(text, seen, system_hint="", copy="unknown", event_time=""):
     return out
 
 
-def pdf_pages(path):
-    """pdftotext output split on form feeds, one string per page."""
+def pdf_pages(path, file_id=None):
+    """pdftotext output split on form feeds, one string per page.
+
+    Without the pdftotext binary, read the committed PDF_TEXT_DIR/<file_id>.md
+    (same pages, byte for byte) and log a warning.
+    """
+    if shutil.which("pdftotext") is None:
+        md = PDF_TEXT_DIR / f"{file_id}.md"
+        if not file_id or not md.is_file():
+            raise RuntimeError(f"pdftotext not found and no committed text {md} for {path}")
+        log.warning("pdftotext not found; using committed text %s for %s",
+                    md.relative_to(PDF_TEXT_DIR.parent), Path(path).name)
+        return md_to_pages(md.read_text(encoding="utf-8"))
     out = subprocess.run(["pdftotext", "-layout", str(path), "-"], capture_output=True,
                          check=True).stdout.decode("utf-8", "replace")
     pages = out.split("\f")
     if pages and not pages[-1].strip():
         pages = pages[:-1]
     return pages
+
+
+def pages_to_md(pages, source):
+    """Pages -> the committed Markdown form. Each page is a marker line, the
+    page text and one added newline; md_to_pages() removes exactly that."""
+    head = f"<!-- pdftotext -layout {source}; generated, do not edit -->\n"
+    return head + "".join(f"<!-- page {i} -->\n{p}\n" for i, p in enumerate(pages, 1))
+
+
+def md_to_pages(text):
+    return [chunk[:-1] for chunk in PAGE_MARK.split(text)[1:]]

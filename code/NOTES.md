@@ -76,5 +76,17 @@
   pairs. (b) LINK_RESOURCE_IDENTITY data-catalog activity claims. On dev, 2 such claims dated ≤ `audit_at`
   are not in gold. For the zero-link cases, one claim has no evidence behind it and the other is contradicted
   by an image showing a different person. Tests: `tests/test_zero_link.py`.
-- **Runtime dependency:** `parse_pdf.py` calls the `pdftotext` binary (poppler). It is not a pip package.
-  Without it on PATH the run fails, so document it in the README.
+- **Runtime dependency (resolved in session 3):** `parse_pdf.py` calls the `pdftotext` binary (poppler).
+
+## Packaging / robustness (2026-10-24, session 3)
+- **Validator:** COMPLETE with `[]` is now a *warning* in `validate.py` (problem_statement.md allows it; zero-link
+  rule). INCOMPLETE with `[]` is still an error. Final output: VALID, 0 invalid rows, 2 warnings. Tests: `tests/test_validate.py`.
+- **PDF fallback:** if `pdftotext` is not on PATH, `parse_common.pdf_pages` reads `code/pdf_text/<file_id>.md` (the
+  committed `pdftotext -layout` pages, exact round trip) and logs one WARNING per PDF. `main.py` now logs at WARNING.
+  `output.csv` is byte-identical with and without pdftotext (`tests/test_pdf_fallback.py`, end-to-end with PATH=/usr/bin:/bin).
+  Regenerate: `python3 code/ghost/parse_pdf.py --write-text`.
+- **Own cases** (`code/evaluation/own_cases/`, `run_own_cases.py`, `main.py --dataset DIR`): 3/4 pass. **Open finding,
+  not fixed:** "Please do not delete my account." is UNKNOWN to the sentence tables, and `effective_intent` maps
+  UNKNOWN → DELETE, so the refusal is audited as a deletion (INCOMPLETE). Changes 0 of 518 rows today (0 UNKNOWN there),
+  but it fails open on unseen text. Any fix must be re-measured on the 23 unknown sample openings (all deletions).
+- **Name channel** (`channels.py` N, diagnostic only): dev 0 gold recovered, 2 extra → precision 0.000. Names stay unused.
