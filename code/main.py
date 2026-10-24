@@ -1,7 +1,8 @@
 """Ghost Data Still Exists - deletion-audit pipeline (baseline v0).
 
 Per case: intent -> (NOT_APPLICABLE, []) or identity -> linking -> state ->
-category -> planner.build_steps. PNG evidence is not used yet.
+category -> planner.build_steps. Linking follows one reference hop from
+linked resources; PNG evidence comes from code/image_transcripts.md.
 
 Run:  python3 code/main.py                       # 518 cases -> output.csv at the repo root
       python3 code/main.py --sample --out PATH   # the 32 public sample requests
@@ -20,10 +21,11 @@ from ghost import identity, intent, linking, loaders, observations, planner, sta
 
 
 class Pipeline:
-    def __init__(self, dataset_dir=None):
-        self.obs = observations.build_observations(dataset_dir)
+    def __init__(self, dataset_dir=None, follow_refs=True, images=True):
+        self.obs = observations.build_observations(dataset_dir, images=images)
         self.index = identity.IdentityIndex.from_dataset(dataset_dir)
-        self.linker = linking.Linker(self.obs)
+        activity = loaders.load_system_activity(dataset_dir) if follow_refs else None
+        self.linker = linking.Linker(self.obs, activity=activity, follow=follow_refs)
         self.resolver = state.StateResolver(self.obs)
         self.treatments = planner.load_treatments(loaders.load_deletion_rules(dataset_dir))
         self.stats = Counter()

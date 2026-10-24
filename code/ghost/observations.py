@@ -3,9 +3,12 @@
 One row per (evidence unit, resource): file_id, captured_at (manifest),
 file_kind, system_id, resource_id, category_hint, state, identifiers
 (dict of sorted lists: emails, hashes, phones, user_ids), copy
-(primary / replica / unknown), event_time, raw_snippet (<= 200 chars).
+(primary / replica / unknown), event_time, raw_snippet (<= 200 chars),
+referenced_by (REFERENCED rows only: space-separated resource ids of the unit
+that mentions the id; "" otherwise).
 
-PNG screenshots are skipped here (separate OCR task). No linking, no policy.
+PNG screenshots are read from the hand transcript (parse_images.py) only
+when images=True; otherwise skipped. No linking, no policy.
 
 Run:  python3 code/ghost/observations.py   (prints the summary)
 """
@@ -18,10 +21,11 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "ghost"
 
-from . import loaders, parse_logs, parse_pdf, parse_records, parse_sql  # noqa: E402
+from . import loaders, parse_images, parse_logs, parse_pdf, parse_records, parse_sql  # noqa: E402
 
 COLUMNS = ["file_id", "captured_at", "file_kind", "system_id", "resource_id",
-           "category_hint", "state", "identifiers", "copy", "event_time", "raw_snippet"]
+           "category_hint", "state", "identifiers", "copy", "event_time", "raw_snippet",
+           "referenced_by"]
 PARSERS = {
     "log": parse_logs.parse_log,
     "json": parse_records.parse_json,
@@ -36,20 +40,22 @@ def file_kind(path):
     return Path(path).suffix.lower().lstrip(".")
 
 
-def build_observations(dataset_dir=None):
+def build_observations(dataset_dir=None, images=False):
     dataset_dir = Path(dataset_dir or loaders.DATASET_DIR)
+    parsers = dict(PARSERS, png=parse_images.parse_image) if images else PARSERS
+    skipped = SKIPPED_KINDS - {"png"} if images else SKIPPED_KINDS
     manifest = loaders.load_evidence_files(dataset_dir).sort_values("file_id", kind="stable")
     rows = []
     for f in manifest.itertuples(index=False):
         kind = file_kind(f.file_path)
-        if kind in SKIPPED_KINDS:
+        if kind in skipped:
             continue
-        parser = PARSERS.get(kind)
+        parser = parsers.get(kind)
         if parser is None:
             raise ValueError(f"no parser for {f.file_path}")
         for unit in parser(dataset_dir / f.file_path):
             rows.append({"file_id": f.file_id, "captured_at": f.captured_at, "file_kind": kind,
-                         **unit})
+                         "referenced_by": "", **unit})
     return pd.DataFrame(rows, columns=COLUMNS)
 
 

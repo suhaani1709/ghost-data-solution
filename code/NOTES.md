@@ -37,3 +37,14 @@
 ## Build order (this repo)
 1. loaders + identity + intent ← **done in `code/ghost/`**
 2. evidence parsers → 3. linkage → 4. policy mapping → 5. state at audit_at → 6. steps + serializer → 7. validator/scorer vs samples.
+
+## Linking improvements (2026-10-24), measured with `code/evaluation/compare.py`
+- **Reference following (kept, default on):** one hop, only from already-linked resources, evidence ≤ `audit_at`.
+  Channels: REFERENCED rows of a linked unit (`referenced_by` column, e.g. `source_resource_id`) and activity rows
+  "repopulated downstream resource X" whose `resource_id` is linked. Dev: +1 recovered, 0 extra, linkP 0.980.
+  The activity channel fired on no dev case.
+- **Images (kept, default on):** `code/image_transcripts.md` (hand transcript of the 11 PNGs, validated against
+  identities and prefix patterns by `code/ghost/parse_images.py`) → observations with `file_kind=image`.
+  No change on the samples. In the 518-case run, invalid rows went from 9 to 2 and 9 rows changed.
+- **Resource-number fallback for zero-link cases (rejected, removed):** it touched 3 dev cases, added 1 wrong
+  resource (dev step P 0.951→0.942) and touched 0 of the 518. It was not kept.

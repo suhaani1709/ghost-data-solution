@@ -21,7 +21,8 @@ from ghost import loaders, observations, parse_common, parse_logs, parse_records
 
 EVIDENCE_DIR = loaders.DATASET_DIR / "evidence"
 OBS_FIELDS = ["file_id", "captured_at", "file_kind", "system_id", "resource_id",
-              "category_hint", "state", "identifiers", "copy", "event_time", "raw_snippet"]
+              "category_hint", "state", "identifiers", "copy", "event_time", "raw_snippet",
+              "referenced_by"]
 
 _TABLE = None
 

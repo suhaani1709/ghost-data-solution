@@ -786,3 +786,36 @@ branch=main
 repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-24T14:12:25Z] SESSION START
+
+tool=Claude Code
+model=claude-opus-5-5
+Repo Root: /Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+Branch: main
+Worktree: main
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-24T14:23:06Z] Linking: reference following, image transcripts, fallback test
+
+User Prompt (verbatim, secrets redacted):
+Read AGENTS.md first and follow its logging rules (per-turn entries in log.txt). Read code/NOTES.md. Reuse code/ghost/ and code/evaluation/. GOAL: three small linking improvements, each measured separately. Tests first (made-up frames) for steps 1 and 3. Revert any change that lowers a metric. STEP 1 - reference following (one hop, from LINKED resources only): If a linked resource's evidence unit references another resource (for example source_resource_id, owner/parent fields, "repopulated downstream resource" rows), link the referenced resource too. Use only evidence captured <= audit_at. Never start from an unlinked resource. Report recovered and extra resources on dev-22 and aggregate-only on held-out-10. Keep it only if dev precision >= 0.95. STEP 2 - images (this is evidence AND a linking channel): View each of the 11 PNG evidence files yourself (do not use tesseract) and write code/image_transcripts.md: for each file_id, every resource id, user id, email, phone, state and row layout visible, in a table per image. Then validate the transcript against the known universe: every email, phone and user_id must exist in the identities data, and every resource id must match a real prefix pattern. List mismatches as "suspected misread"; do not auto-correct and never snap to look-alike emails. Fix misreads by viewing the image again. Parse the validated transcript into observations (same fields as the other parsers, file_kind=image, captured_at from evidence_files.csv) and feed them through the existing linking and state code. Report linkage recall/precision before and after on dev-22, and aggregate-only on held-out-10. STEP 3 - last-resort fallback for empty cases only: For a case where linking returned ZERO resources, test the resource-number convention (for example account_005 <-> user_05) as the only channel. Apply it only to such cases. Report how many cases it touches, and on the samples whether it helps or hurts. Keep it only if it never hurts a dev case; if kept, mark it in code and in NOTES.md as "disclosed last-resort heuristic". Finish with a before/after table: dev-22 and held-out-10 status accuracy, step P/R/F1, exact match, linkage recall/precision, planner oracle, and the number of invalid rows in the 518-case output. RULES: stdlib + pandas only, no installs, no edits to dataset/, no hard-coded case_ids, no paid model calls, no per-case special handling. Do not analyze the held-out 10 beyond aggregates. Compact output, then stop.
+
+Agent Response Summary:
+Step 1 (kept): one-hop reference following from linked resources (REFERENCED rows now carry referenced_by; activity "repopulated downstream" rows), evidence <= audit_at only. On dev it recovers 1 resource with 0 extra (link P 0.980); held-out is unchanged. Step 2 (kept): I viewed all 11 PNGs and wrote code/image_transcripts.md (24 rows). The validator flagged 9 out-of-universe values; zoomed re-reads confirmed each one as read (a look-alike decoy plus staff, business and unknown contacts), so nothing was corrected. Images do not change sample metrics, and invalid rows in the 518 output go from 9 to 2. Step 3 (reverted): the number fallback touched 3 dev cases and 0 of the 518, and it added 1 wrong resource (dev step P 0.951 -> 0.942), so it was removed.
+
+Actions:
+* edited code/ghost/linking.py, parse_common.py, observations.py, code/main.py, code/evaluation/validate.py, code/tests/test_parsers.py
+* created code/ghost/parse_images.py, code/image_transcripts.md, code/evaluation/compare.py, code/tests/test_reference_following.py
+* created then removed code/tests/test_number_fallback.py and the fallback code
+* viewed 11 PNG evidence images and zoomed crops (scratchpad); ran unittest discover (OK), compare.py, main.py, validate.py; appended to code/NOTES.md
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=main
+repo_root=/Users/yugagarwal105/hackerrank-2/hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none

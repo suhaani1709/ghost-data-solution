@@ -182,10 +182,13 @@ def make_unit(*, system_id, resource_id, category_hint, state, text, copy="unkno
 def reference_units(text, seen, system_hint="", copy="unknown", event_time=""):
     """Ids mentioned in a unit but not its own resource: emitted as REFERENCED."""
     out = []
+    owners = " ".join(sorted(set(seen)))
     for rid in sorted(set(RESOURCE_ID.findall(text)) - set(seen)):
-        out.append(make_unit(system_id=system_for(rid, system_hint), resource_id=rid,
-                             category_hint="", state="REFERENCED", text=text, copy=copy,
-                             event_time=event_time))
+        unit = make_unit(system_id=system_for(rid, system_hint), resource_id=rid,
+                         category_hint="", state="REFERENCED", text=text, copy=copy,
+                         event_time=event_time)
+        unit["referenced_by"] = owners      # the unit's own resource ids ("" if none)
+        out.append(unit)
     return out
 
 

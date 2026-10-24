@@ -21,10 +21,12 @@ STATUSES = {"COMPLETE", "INCOMPLETE", "NOT_APPLICABLE"}
 def validate(path, requests, manifest, audit_ids, activity_times):
     errors = Counter()
     examples = {}
+    bad = set()     # case_ids of rows with at least one failed check
 
     def err(kind, case_id):
         errors[kind] += 1
         examples.setdefault(kind, case_id)
+        bad.add(case_id)
 
     with open(path, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
@@ -88,7 +90,7 @@ def validate(path, requests, manifest, audit_ids, activity_times):
                     err("unknown evidence_id", cid)
             elif ev:
                 err("future step with evidence_id", cid)
-    return len(rows), errors, examples
+    return len(rows), errors, examples, bad
 
 
 def main(argv=None):
@@ -98,13 +100,13 @@ def main(argv=None):
     args = ap.parse_args(argv)
     requests = loaders.load_sample_requests() if args.sample else loaders.load_deletion_requests()
     activity = loaders.load_system_activity()
-    n, errors, examples = validate(args.path, requests, loaders.load_evidence_files(),
+    n, errors, examples, bad = validate(args.path, requests, loaders.load_evidence_files(),
                                    set(loaders.load_user_audit_log().audit_id),
                                    dict(zip(activity.activity_id, activity.event_time)))
     if not errors:
         print(f"VALID: {n} rows, all checks passed")
         return 0
-    print(f"INVALID: {n} rows")
+    print(f"INVALID: {len(bad)} of {n} rows")
     for kind, count in errors.most_common():
         print(f"  {count:4d}  {kind}  (e.g. {examples[kind]})")
     return 1
