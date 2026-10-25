@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\": []}",
+ "created_at": "2026-10-25T02:38:56Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:object_storage_browser_20260213.png",
+ "usage": {
+  "cache_read_tokens": 4301,
+  "completion_tokens": 147,
+  "cost_usd_equivalent": 0.0158801,
+  "prompt_tokens": 7798
+ }
+}

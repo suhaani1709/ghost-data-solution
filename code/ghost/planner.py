@@ -8,7 +8,12 @@ from the operation table in problem_statement.md and the sample answers.
 Where the two sources do not line up, see DISAGREEMENTS. Those points follow the
 samples and are not silently merged.
 """
+from __future__ import annotations
+
 from collections import namedtuple
+from typing import Iterable, Optional
+
+import pandas as pd
 
 from . import loaders
 
@@ -65,7 +70,7 @@ DISAGREEMENTS = [
 ]
 
 
-def load_treatments(rules=None):
+def load_treatments(rules: Optional[pd.DataFrame] = None) -> dict[str, Treatment]:
     """{category: Treatment} from deletion_rules.csv plus the sample overrides."""
     rules = loaders.load_deletion_rules() if rules is None else rules
     out = {}
@@ -79,21 +84,33 @@ def load_treatments(rules=None):
     return out
 
 
-def _step(op, system_id, resource_id, evidence_id):
+def _step(op: str, system_id: str, resource_id: str, evidence_id: str) -> dict:
     return {"step_no": 0, "phase": PHASE_OF[op], "system_id": system_id, "resource_id": resource_id,
             "operation": op, "state": STATE_OF[op], "evidence_id": evidence_id}
 
 
-def _sort_key(step):
+def _sort_key(step: dict) -> tuple:
     return (PHASES.index(step["phase"]), OP_ORDER[step["operation"]], step["system_id"], step["resource_id"])
 
 
-def is_zero_link(resources):
+def is_zero_link(resources: Iterable[tuple]) -> bool:
     """True when a deletion request has no linked, categorized resource (zero-link rule)."""
     return not list(resources)
 
 
-def build_steps(resources, treatments=None):
+def build_steps_unproven(resources: Iterable[tuple], treatments: Optional[dict] = None) -> tuple[str, list[dict]]:
+    """build_steps, where resources with evidence_id "" (retained records linked only by
+    evidence captured after audit_at: state unknown, assumed PRESENT) are future checks.
+    They stay when the case is INCOMPLETE and are dropped when it would be COMPLETE,
+    since a COMPLETE verification must cite evidence <= audit_at."""
+    resources = list(resources)
+    status, steps = build_steps(resources, treatments)
+    if status == "COMPLETE" and any(r[4] == "" for r in resources):
+        status, steps = build_steps([r for r in resources if r[4] != ""], treatments)
+    return status, steps
+
+
+def build_steps(resources: Iterable[tuple], treatments: Optional[dict] = None) -> tuple[str, list[dict]]:
     """resources: iterable of (system_id, resource_id, category, observed_state, evidence_id).
 
     Returns (status, steps) with status COMPLETE or INCOMPLETE.

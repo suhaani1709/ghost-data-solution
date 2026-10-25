@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\": [\n{\"row\": \"1\", \"system_id\": \"export_service\", \"resource_id\": \"export_1261\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"marcus.lee@northstar.shop\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"USER_EXPORT\"},\n{\"row\": \"2\", \"system_id\": \"export_service\", \"resource_id\": \"export_1260\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"ingrid.dahl@outlook.com\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"USER_EXPORT\"},\n{\"row\": \"3\", \"system_id\": \"export_service\", \"resource_id\": \"export_1259\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"sara.kim@northstar.shop\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"USER_EXPORT\"},\n{\"row\": \"4\", \"system_id\": \"export_service\", \"resource_id\": \"export_1258\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"daniel.park@northstar.shop\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"USER_EXPORT\"},\n{\"row\": \"details panel\", \"system_id\": \"export_service\", \"resource_id\": \"export_1260\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"ingrid.dahl@outlook.com\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"USER_EXPORT\"}\n]}",
+ "created_at": "2026-10-25T02:38:36Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:customer_export_console_20260618.png",
+ "usage": {
+  "cache_read_tokens": 4302,
+  "completion_tokens": 670,
+  "cost_usd_equivalent": 0.0205982,
+  "prompt_tokens": 7671
+ }
+}

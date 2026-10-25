@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\":[{\"row\":\"header\",\"system_id\":\"support_platform\",\"resource_id\":\"support_1034\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"kagyeman8947@fastmail.com\",\"phone\":\"\",\"state\":\"IDENTIFIABLE\",\"category\":\"SUPPORT_MESSAGE\"}],\"unreadable\":[]}",
+ "created_at": "2026-10-25T12:30:25Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:support_ticket_console_20260524.png",
+ "usage": {
+  "cache_read_tokens": 4538,
+  "completion_tokens": 302,
+  "cost_usd_equivalent": 0.0177378,
+  "prompt_tokens": 8106
+ }
+}

@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\":[\n{\"row\":\"1\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_003\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"},\n{\"row\":\"2\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_002\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"},\n{\"row\":\"3\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_001\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"},\n{\"row\":\"4\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_006\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"},\n{\"row\":\"5\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_005\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"},\n{\"row\":\"6\",\"system_id\":\"security_service\",\"resource_id\":\"audit_record_004\",\"role\":\"OWN\",\"user_id\":\"user_03\",\"email\":\"\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SECURITY_AUDIT_LOG\"}\n]}",
+ "created_at": "2026-10-25T02:39:13Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:security_audit_explorer_20260905.png",
+ "usage": {
+  "cache_read_tokens": 4304,
+  "completion_tokens": 803,
+  "cost_usd_equivalent": 0.0219444,
+  "prompt_tokens": 7677
+ }
+}

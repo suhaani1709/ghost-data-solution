@@ -14,12 +14,44 @@ Read [`problem_statement.md`](./problem_statement.md) for the complete challenge
 
 ## Solution: setup and run
 
-The deletion-audit agent is a deterministic Python pipeline in `code/`. It makes **no model or
-network calls at run time** and needs no API key (see `code/evaluation/usage_report.md`).
+The deletion-audit agent is a Python pipeline in `code/`: a deterministic evidence engine, plus three
+LLM agents for the parts that need judgment. Code audits every model output before it can reach `output.csv`.
+
+- **Intent agent** (`code/ghost/intent_agent.py`): an LLM reads every request text, in any language, in
+  batches. The sentence tables cross-check it, and an explicit "do not delete" always wins.
+- **Vision agent** (`code/ghost/vision_agent.py`): the LLM opens each PNG screenshot and transcribes its
+  records. The reading is used when it matches the development transcript; otherwise the transcript is used
+  and the difference is reported.
+- **Investigator agent** (`code/ghost/investigator.py`): a tool-calling loop. For each routed case, Claude
+  reviews the engine's answer with read-only tools (`record_history`, `search_identifier`, `read_evidence`,
+  `account_candidates`, `policy`) and submits corrections. `merge()` applies only proposals that a
+  deterministic check backs. Routing sends the cases the engine flags as uncertain (category conflict →
+  weak link → no account), up to `--investigate-budget` (default 20). The routed set is computed from those
+  flags on every run; no case ids are stored anywhere.
+- **Output schemas** (`code/ghost/schemas.py`): every structured model answer is validated against an
+  explicit JSON schema before use (`INTENT_ITEM`, `VISION_ANSWER`, `INVESTIGATOR_ACTION`). A model that is
+  unsure can say so: intent label `UNSURE`, or a screenshot row listed as `unreadable`. Those answers, and any
+  answer that fails its schema, are counted and never used; the rules or the transcript decide instead.
+  Tests: `code/tests/test_schemas.py`.
+- **Deterministic engine:** identity resolution (current + historical emails, SHA-256 hashes), evidence
+  parsing (SQL, JSON, logs, PDF, images), linking, the account finder, state at `audit_at`,
+  `deletion_rules.csv` policy, and step planning.
+
+**Models.**
+- Default: Claude Sonnet through **Claude Code's headless mode** (`claude -p`, `llm.ClaudeCodeClient`).
+  Each call replaces Claude Code's system prompt and loads no tools, MCP servers or project files, so the
+  model sees only what the pipeline sends.
+- Alternative: free OpenRouter models (`--backend openrouter`, `llm.Client`).
+- Answers are cached locally in `code/llm_cache/` during development. **The cache is not shipped in
+  `code.zip`** (AGENTS.md §6.9). Without Claude Code, or with `--offline`, the agents make no model call
+  and the deterministic rules decide. That reproduces the submitted `output.csv` byte for byte, because the
+  agents changed no output row (measured: section 13 of the evaluation report).
+- Token use is in `code/evaluation/usage_report.md`.
 
 ```text
-code/main.py            entry point: intent -> identity -> linking -> state -> policy -> steps
-code/ghost/             loaders, identity, intent tables, evidence parsers, linker, state, planner
+code/main.py            entry point: agents -> identity -> linking -> state -> policy -> steps
+code/ghost/             loaders, identity, intent tables + agent, vision agent, investigator, schemas, llm clients, parsers, linker, state, planner
+code/llm_cache/         local cache of model answers + usage_log.jsonl (NOT shipped in code.zip)
 code/image_transcripts.md   hand transcript of the 11 PNG screenshots (read at run time; no OCR)
 code/pdf_text/          committed `pdftotext -layout` text of the 4 PDFs (fallback, see below)
 code/tests/             unit tests (synthetic frames) + sample oracle tests
@@ -35,6 +67,15 @@ code/NOTES.md           working notes: every rule, its evidence and its measured
   ```bash
   python3 -m pip install pandas
   ```
+
+- **Model access (optional):** nothing is needed to reproduce `output.csv`. Without Claude Code the run prints
+  a NOTE, makes no model call and uses the deterministic rules. To let the agents call a model:
+  - default backend: install Claude Code and log in (`claude` on `PATH`);
+  - `--backend openrouter`: set `OPENROUTER_API_KEY` in the environment or in an uncommitted repo-root `.env`
+    file (listed in `.gitignore`).
+
+  Without a cached answer and without model access, the agents fall back to the deterministic rules and log
+  a warning.
 
 - **Optional:** `pdftotext` from poppler (`brew install poppler`, `apt-get install poppler-utils`).
   If it is on `PATH`, the four PDFs are read with `pdftotext -layout`. If it is missing, the run does
@@ -52,11 +93,16 @@ From the repository root, with `dataset/` in place:
 python3 code/main.py
 ```
 
-This writes **`output.csv` at the repository root**: 518 rows sorted by `case_id`, with header
-`case_id,deletion_status,steps_json`. The run takes about 4 s, and repeated runs are byte-identical.
-Other modes:
+This writes **`output.csv` at the repository root**: 518 rows in the numeric `case_id` order of
+`dataset/deletion_requests.csv` (case_33, case_34, …, case_550), with header
+`case_id,deletion_status,steps_json`. With the cache in place the run makes no network call, takes a few
+seconds, and repeated runs are byte-identical. Other modes:
 
 ```bash
+python3 code/main.py --offline                                  # cached model answers only, never call the API
+python3 code/main.py --no-llm                                   # deterministic rules only (no agents)
+python3 code/main.py --investigate-budget 50                    # investigate up to 50 flagged cases
+python3 code/main.py --backend openrouter                       # free OpenRouter models for intent/vision
 python3 code/main.py --sample --out /tmp/sample_pred.csv        # the 32 public sample requests
 python3 code/main.py --dataset DIR --out /tmp/pred.csv          # any directory with the dataset/ schema
 ```
@@ -64,13 +110,18 @@ python3 code/main.py --dataset DIR --out /tmp/pred.csv          # any directory 
 ### Tests and evaluation
 
 ```bash
-python3 -m unittest discover -s code/tests                      # all unit + oracle tests
+python3 -m unittest discover -s code/tests                      # all unit + oracle tests (offline, no API calls)
 python3 code/evaluation/validate.py output.csv                  # output contract check (exit 0 = valid)
 python3 code/evaluation/score.py                                # status / step / field / sequence accuracy on the 32 samples
-python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat account table_cover account+cover
+python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat account table_cover account+cover propagate after_audit explicit_absence after+explicit llm
 python3 code/evaluation/breakdown.py                            # failure breakdown (linking recall/precision)
 python3 code/evaluation/channels.py                             # rejected linking channels and their precision
+python3 code/evaluation/channels.py --accounts                  # account finder / propagation / forced-pick diagnostics
 python3 code/evaluation/run_own_cases.py                        # the hand-built cases in code/evaluation/own_cases/
+python3 code/evaluation/run_investigator.py                     # investigator on the 32 samples, scored per proposal kind
+python3 code/evaluation/audit_rows.py                           # gold-derived invariants checked on all 518 rows
+python3 code/evaluation/independent_check.py 40                 # raw-text re-derivation of linked records, diffed
+python3 code/evaluation/account_backtest.py                     # account assignment backtest (hidden labelled accounts)
 ```
 
 `score.py` reports the first 22 samples (by `case_id`) as **dev** and the last 10 as **held-out**.
@@ -80,7 +131,7 @@ are mirrored to `evaluation/` because `problem_statement.md` and `AGENTS.md` nam
 ### Package
 
 ```bash
-zip -r code.zip README.md code evaluation -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
+zip -r code.zip README.md code evaluation -x "code/llm_cache/*" "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
 ```
 
 This is the command from "Packaging `code.zip`" below, with `evaluation` added as that section allows

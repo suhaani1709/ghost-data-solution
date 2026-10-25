@@ -38,8 +38,8 @@ def validate(path, requests, manifest, audit_ids, activity_times):
             err("bad header", str(reader.fieldnames))
         rows = list(reader)
     ids = [r["case_id"] for r in rows]
-    if ids != sorted(ids):
-        err("rows not sorted by case_id", "")
+    if ids != loaders.sort_case_ids(ids):
+        err("rows not in numeric case_id order", "")
     if Counter(ids) != Counter(requests.case_id):
         err("case_id set differs from requests", f"{len(ids)} rows")
     audit = dict(zip(requests.case_id, requests.audit_at))

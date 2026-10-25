@@ -1,0 +1,29 @@
+{
+ "answer": "{\"rows\": [{\"row\": \"header\", \"system_id\": \"account_service\", \"resource_id\": \"account_5762\", \"role\": \"OWN\", \"user_id\": \"user_11\", \"email\": \"haruka.s1838@zoho.com\", \"phone\": \"+81 90 7610 2507\", \"state\": \"PRESENT\", \"category\": \"USER_PROFILE\"}, {\"row\": \"details panel\", \"system_id\": \"support_platform\", \"resource_id\": \"support_9538\", \"role\": \"REF:account_5762\", \"user_id\": \"\", \"email\": \"\", \"phone\": \"\", \"state\": \"REFERENCED\", \"category\": \"\"}]}",
+ "created_at": "2026-10-24T22:48:05Z",
+ "model": "nvidia/nemotron-3.5-super-vl:free",
+ "purpose": "vision:account_admin_console_20260926.png",
+ "usage": {
+  "completion_tokens": 1793,
+  "completion_tokens_details": {
+   "audio_tokens": 0,
+   "image_tokens": 0,
+   "reasoning_tokens": 1624
+  },
+  "cost": 0,
+  "cost_details": {
+   "upstream_inference_completions_cost": 0,
+   "upstream_inference_cost": 0,
+   "upstream_inference_prompt_cost": 0
+  },
+  "is_byok": false,
+  "prompt_tokens": 2685,
+  "prompt_tokens_details": {
+   "audio_tokens": 0,
+   "cache_write_tokens": 0,
+   "cached_tokens": 0,
+   "video_tokens": 0
+  },
+  "total_tokens": 4478
+ }
+}

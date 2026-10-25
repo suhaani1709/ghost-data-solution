@@ -109,8 +109,10 @@ case("b_lookalike_decoy",
                "records": [{"resource_id": "analytics_9003", "user_id": None, "email": None,
                             "phone": None, "email_hash": H(decoy_hash_email),
                             "reporting_window": "last_90_days"}]}]})],
-     expected=("COMPLETE", [step(1, "VERIFICATION", "account_service", "account_9001",
-                                 "VERIFY_RECORD_ABSENT", "ABSENT", "evidence_b2")]),
+     expected=("INCOMPLETE", [
+         step(1, "FINDING", "account_service", "account_9001", "REPORT_REMAINING_RECORD", "PRESENT", "evidence_b1"),
+         step(2, "REMEDIATION", "account_service", "account_9001", "DELETE_RECORD", "ABSENT", ""),
+         step(3, "VERIFICATION", "account_service", "account_9001", "VERIFY_RECORD_ABSENT", "ABSENT", "")]),
      derivation=f"""
 # Own case (b): look-alike decoy identifiers must not link
 
@@ -132,6 +134,32 @@ with one verification step citing evidence_b2.
 **Expected:** COMPLETE,
 `[{{1, VERIFICATION, account_service, account_9001, VERIFY_RECORD_ABSENT, ABSENT, evidence_b2}}]`.
 A row for search_9002 or analytics_9003 would be a decoy false positive.
+
+## Correction (2026-10-25, session 13) — the original expectation above was wrong
+
+**Original expectation (session 3, kept for the record):** COMPLETE, one VERIFY_RECORD_ABSENT for account_9001 cited to
+evidence_b2, on the assumption that an empty `customer_profiles` collection in a later snapshot bundle proves that
+every account is gone.
+
+**Contradiction found in the real data and the answer key:**
+- The dataset's `customer_data_snapshot_bundle_*.json` files are records-assurance bundles that hold only a few
+  subjects' records. evidence_51 holds just 2 tombstones and 2 audit records, the records of two specific requests.
+- Gold case_24: account_5334 was observed present (evidence_92, 09:41). The evidence_51 bundle at 12:00 has an empty
+  `customer_profiles` collection and does not mention that subject. Gold still reports the account PRESENT
+  (REPORT_REMAINING_RECORD citing evidence_92).
+- Gold case_31: the same bundle *does* mention its subject, and gold uses it to prove that subject's
+  never-observed account absent.
+- Gold cites SQL table dumps as absence proof for subjects the dump never mentions (case_01, case_02, case_04):
+  a table dump is exhaustive, a bundle is not.
+
+**Corrected expectation:** evidence_b2 mentions only the decoys, never Ada. Its empty collection says nothing about
+Ada's account, so account_9001 is still PRESENT at audit_at by its own evidence (evidence_b1).
+Expected: INCOMPLETE:
+1 REPORT_REMAINING_RECORD account_service/account_9001 (evidence_b1);
+2 DELETE_RECORD (empty evidence);
+3 VERIFY_RECORD_ABSENT (empty evidence).
+
+The case's purpose is unchanged: search_9002 and analytics_9003, the look-alike decoys, must not appear.
 """)
 
 # (c) primary deleted, failover replica still holds the row --------------------------

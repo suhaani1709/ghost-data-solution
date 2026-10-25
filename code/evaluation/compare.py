@@ -24,30 +24,62 @@ from ghost import loaders  # noqa: E402
 
 CONFIGS = {
     "base": {"follow_refs": False, "images": False,
-             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "follow_refs": {"follow_refs": True, "images": False,
-             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "images": {"follow_refs": False, "images": True,
-             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False},
+             "replica_persist": "off", "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "follow+images": {"follow_refs": True, "images": True, "replica_persist": "off",
-                      "activity_category": False, "find_account": False, "table_coverage": False},
+                      "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "replica_any": {"follow_refs": True, "images": True, "replica_persist": "any",
-                    "activity_category": False, "find_account": False, "table_coverage": False},
+                    "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "replica_drift": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                      "activity_category": False, "find_account": False, "table_coverage": False},
+                      "activity_category": False, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "drift+actcat": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                     "activity_category": True, "find_account": False, "table_coverage": False},
+                     "activity_category": True, "find_account": False, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "account": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                "activity_category": True, "find_account": True, "table_coverage": False},
+                "activity_category": True, "find_account": True, "table_coverage": False, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "table_cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
-                    "activity_category": True, "find_account": False, "table_coverage": True},
+                    "activity_category": True, "find_account": False, "table_coverage": True, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
     "account+cover": {"follow_refs": True, "images": True, "replica_persist": "drift",
                       "activity_category": True, "find_account": True, "table_coverage": True,
                       "propagate_accounts": False},
     "propagate": {"follow_refs": True, "images": True, "replica_persist": "drift",
                   "activity_category": True, "find_account": True, "table_coverage": True,
-                  "propagate_accounts": True},                                 # default
+                  "propagate_accounts": True, "use_llm": False, "link_after_audit": False, "explicit_absence": False},
+    "after_audit": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                    "activity_category": True, "find_account": True, "table_coverage": True,
+                    "propagate_accounts": True, "use_llm": False, "link_after_audit": True, "explicit_absence": False},
+    "explicit_absence": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                         "activity_category": True, "find_account": True, "table_coverage": True,
+                         "propagate_accounts": True, "use_llm": False, "explicit_absence": True, "link_after_audit": False},
+    "after+explicit": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                       "activity_category": True, "find_account": True, "table_coverage": True,
+                       "propagate_accounts": True, "use_llm": False, "link_after_audit": True,
+                       "explicit_absence": True},
+    "llm_wide_window": {"follow_refs": True, "images": True, "replica_persist": "drift",
+                        "activity_category": True, "find_account": True, "table_coverage": True,
+                        "propagate_accounts": True, "use_llm": True, "link_after_audit": True,
+                        "explicit_absence": True, "finder_windows": ((75, 10),)},
+    "llm": {"follow_refs": True, "images": True, "replica_persist": "drift",
+            "activity_category": True, "find_account": True, "table_coverage": True,
+            "propagate_accounts": True, "use_llm": True, "link_after_audit": True,
+            "explicit_absence": True, "finder_windows": ((76, -39), (6, 6)), "status_match": True,
+            "coverage_only_if_unobserved": False, "newest_account": True, "status_windows": 1,
+            "scoped_bundles": True},  # default
 }
+# An option a config does not name is off, so older configs keep their meaning when
+# Pipeline defaults change.
+OPTIONS_OFF = {"follow_refs": False, "images": False, "replica_persist": "off",
+               "activity_category": False, "find_account": False, "table_coverage": False,
+               "propagate_accounts": False, "use_llm": False, "link_after_audit": False,
+               "explicit_absence": False, "finder_windows": ((75, 10),), "status_match": False,
+               "coverage_only_if_unobserved": False, "newest_account": False, "status_windows": None,
+               "scoped_bundles": False}
+for _cfg in CONFIGS.values():
+    for _k, _v in OPTIONS_OFF.items():
+        _cfg.setdefault(_k, _v)
+    _cfg["offline"] = True      # evaluation never calls the model API: cached answers only
 
 
 def resources(steps):

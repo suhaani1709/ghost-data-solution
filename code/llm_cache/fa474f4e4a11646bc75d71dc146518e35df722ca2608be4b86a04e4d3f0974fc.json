@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\": [{\"row\": \"header\", \"system_id\": \"marketing_service\", \"resource_id\": \"marketing_001\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"sj.park@naver.com\", \"phone\": \"+82 10-5837-9451\", \"state\": \"PRESENT\", \"category\": \"MARKETING_PROFILE\"}]}",
+ "created_at": "2026-10-25T02:38:49Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:marketing_profile_console.png",
+ "usage": {
+  "cache_read_tokens": 4300,
+  "completion_tokens": 337,
+  "cost_usd_equivalent": 0.013980000000000001,
+  "prompt_tokens": 6847
+ }
+}

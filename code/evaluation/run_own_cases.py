@@ -23,7 +23,7 @@ OWN = Path(__file__).resolve().parent / "own_cases"
 def run_case(case_dir):
     main_mod = score.load_pipeline_module()
     dataset = case_dir / "dataset"
-    pipe = main_mod.Pipeline(dataset_dir=dataset)
+    pipe = main_mod.Pipeline(dataset_dir=dataset, offline=True)   # cached model answers only
     pred = {r["case_id"]: (r["deletion_status"], json.loads(r["steps_json"]))
             for r in pipe.run(loaders.load_deletion_requests(dataset))}
     gold = score.load_csv(case_dir / "expected_output.csv")

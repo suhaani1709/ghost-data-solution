@@ -5,18 +5,22 @@ Matching is exact only (emails lowercased and stripped). There is deliberately
 no fuzzy matching or edit distance: the evidence contains look-alike decoy
 emails that must not resolve.
 """
+from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
+import pandas as pd
+
 from . import loaders
 
 
-def normalize_email(email):
+def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def email_sha256(email):
+def email_sha256(email: str) -> str:
     return hashlib.sha256(normalize_email(email).encode("utf-8")).hexdigest()
 
 
@@ -32,7 +36,7 @@ class IdentitySet:
     phones: frozenset     # current + every audit-log old/new phone
     email_hashes: frozenset  # snapshot/audit hashes + sha256 of every email
 
-    def identifiers(self):
+    def identifiers(self) -> frozenset:
         """Every token that can link evidence to this user."""
         tokens = {self.user_id, self.name} | self.emails | self.phones | self.email_hashes
         return frozenset(t for t in tokens if t)
@@ -44,7 +48,7 @@ class Resolution(NamedTuple):
     candidates: tuple       # every (user_id, kind) the email matched
 
 
-def build_identity_sets(identities, audit_log):
+def build_identity_sets(identities: pd.DataFrame, audit_log: pd.DataFrame) -> dict[str, IdentitySet]:
     """Return {user_id: IdentitySet} from the snapshot and the audit log."""
     history = {}
     for row in audit_log.itertuples(index=False):
@@ -80,7 +84,7 @@ def build_identity_sets(identities, audit_log):
 
 
 class IdentityIndex:
-    def __init__(self, identity_sets):
+    def __init__(self, identity_sets: dict[str, IdentitySet]) -> None:
         self.sets = identity_sets
         self._by_email = {}
         for ident in identity_sets.values():
@@ -89,11 +93,11 @@ class IdentityIndex:
                 self._by_email.setdefault(email, set()).add((ident.user_id, kind))
 
     @classmethod
-    def from_dataset(cls, dataset_dir=None):
+    def from_dataset(cls, dataset_dir=None) -> "IdentityIndex":
         return cls(build_identity_sets(loaders.load_user_identities(dataset_dir),
                                        loaders.load_user_audit_log(dataset_dir)))
 
-    def resolve_email(self, email):
+    def resolve_email(self, email: str) -> Resolution:
         candidates = tuple(sorted(self._by_email.get(normalize_email(email), ())))
         users = {uid for uid, _ in candidates}
         if not users:
@@ -103,7 +107,7 @@ class IdentityIndex:
         (user_id, kind), = candidates
         return Resolution(user_id, kind, candidates)
 
-    def resolve_request(self, case):
+    def resolve_request(self, case) -> Resolution:
         """case: a request row (mapping or namedtuple with an `email` field)."""
         email = case["email"] if isinstance(case, dict) or hasattr(case, "keys") else case.email
         return self.resolve_email(email)
@@ -112,7 +116,7 @@ class IdentityIndex:
 _default_index = None
 
 
-def resolve_request(case, index=None):
+def resolve_request(case, index: Optional["IdentityIndex"] = None) -> Resolution:
     """Resolve a request to a user via its email (current or historical).
 
     Returns a Resolution; `.user_id` is the user and `.match` says whether the

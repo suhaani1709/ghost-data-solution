@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\":[{\"row\":\"1\",\"system_id\":\"search_service\",\"resource_id\":\"search_428\",\"role\":\"OWN\",\"user_id\":\"user_13\",\"email\":\"g.silva76@gmail.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SEARCH_INDEX_ENTRY\"},{\"row\":\"2\",\"system_id\":\"search_service\",\"resource_id\":\"search_1874\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"g.silva76.jr@gmail.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"SEARCH_INDEX_ENTRY\"}],\"unreadable\":[]}",
+ "created_at": "2026-10-25T12:30:09Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:search_index_inspector_20260901.png",
+ "usage": {
+  "cache_read_tokens": 4539,
+  "completion_tokens": 459,
+  "cost_usd_equivalent": 0.0185359,
+  "prompt_tokens": 7914
+ }
+}

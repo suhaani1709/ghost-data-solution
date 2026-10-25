@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\":[{\"row\":\"1\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9291\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"bluepeakco@outlook.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"BACKUP_ARCHIVE\"},{\"row\":\"2\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9288\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"miller.logistics@company.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"BACKUP_ARCHIVE\"},{\"row\":\"3\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9287\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"areed1433@gmail.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"BACKUP_ARCHIVE\"},{\"row\":\"4\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9286\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"summit-retail@company.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"BACKUP_ARCHIVE\"},{\"row\":\"details panel\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9287\",\"role\":\"OWN\",\"user_id\":\"\",\"email\":\"areed1433@gmail.com\",\"phone\":\"\",\"state\":\"PRESENT\",\"category\":\"BACKUP_ARCHIVE\"},{\"row\":\"details panel activity 25 Apr\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9286\",\"role\":\"REF:backup_9287\",\"user_id\":\"\",\"email\":\"\",\"phone\":\"\",\"state\":\"REFERENCED\",\"category\":\"\"},{\"row\":\"details panel activity 24 Apr\",\"system_id\":\"backup_service\",\"resource_id\":\"backup_9281\",\"role\":\"REF:backup_9287\",\"user_id\":\"\",\"email\":\"\",\"phone\":\"\",\"state\":\"REFERENCED\",\"category\":\"\"}],\"unreadable\":[]}",
+ "created_at": "2026-10-25T12:29:22Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:backup_restore_console_20260429.png",
+ "usage": {
+  "cache_read_tokens": 4539,
+  "completion_tokens": 924,
+  "cost_usd_equivalent": 0.0237059,
+  "prompt_tokens": 8044
+ }
+}

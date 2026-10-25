@@ -85,7 +85,7 @@ def load_pipeline_module():
 
 
 def predict_samples():
-    pipe = load_pipeline_module().Pipeline()
+    pipe = load_pipeline_module().Pipeline(offline=True)   # cached model answers only
     rows = pipe.run(loaders.load_sample_requests())
     return pipe, {r["case_id"]: (r["deletion_status"], json.loads(r["steps_json"])) for r in rows}
 

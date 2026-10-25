@@ -40,9 +40,11 @@ def file_kind(path):
     return Path(path).suffix.lower().lstrip(".")
 
 
-def build_observations(dataset_dir=None, images=False, table_coverage=False):
+def build_observations(dataset_dir=None, images=False, table_coverage=False, image_rows=None):
     dataset_dir = Path(dataset_dir or loaders.DATASET_DIR)
     parsers = dict(PARSERS, png=parse_images.parse_image) if images else dict(PARSERS)
+    if images and image_rows is not None:
+        parsers["png"] = lambda path: parse_images.parse_image(path, rows=image_rows.get(Path(path).name))
     if table_coverage:
         parsers["sql"] = lambda path: parse_sql.parse_sql(path, table_coverage=True)
     skipped = SKIPPED_KINDS - {"png"} if images else SKIPPED_KINDS

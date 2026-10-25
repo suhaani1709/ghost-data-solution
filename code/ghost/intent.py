@@ -11,6 +11,8 @@ unseen sentence (which could reverse the intent) is never guessed. Keyword
 regexes are deliberately not used: "correct treatment" or "remove" appear in
 deletion texts too.
 """
+from __future__ import annotations
+
 import logging
 import re
 import unicodedata
@@ -123,16 +125,16 @@ _QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])\s*")
 
 
-def normalize(text):
+def normalize(text: str) -> str:
     text = unicodedata.normalize("NFC", text).translate(_QUOTES)
     return " ".join(text.split())
 
 
-def split_sentences(text):
+def split_sentences(text: str) -> list[str]:
     return [s for s in _SENTENCE_SPLIT.split(normalize(text)) if s]
 
 
-def classify(text):
+def classify(text: str) -> tuple[str, str]:
     """Return (label, reason). label is DELETE, NON_DELETE or UNKNOWN."""
     sentences = split_sentences(text)
     if not sentences:
@@ -150,7 +152,7 @@ def classify(text):
     return label, f"template ({opening[1]})"
 
 
-def classify_requests(requests):
+def classify_requests(requests) -> tuple[dict[str, str], list[tuple[str, str]]]:
     """requests: DataFrame with case_id and request_text.
 
     Returns (labels, unknown): labels is {case_id: label}; unknown is a list
@@ -165,7 +167,7 @@ def classify_requests(requests):
     return labels, unknown
 
 
-def effective_intent(text, warn=True):
+def effective_intent(text: str, warn: bool = True) -> str:
     """DELETE or NON_DELETE for the pipeline. The strict classify() is unchanged.
 
     UNKNOWN that contains an explicit refusal (NEGATIONS) is NON_DELETE. Other

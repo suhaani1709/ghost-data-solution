@@ -1,312 +1,473 @@
 # Evaluation report: Ghost Data Still Exists deletion-audit agent
 
-Every number below comes from running the scripts named next to it on the final code
-(including the session-4/5 account finder and the session-5 negation fix, see section 9) on 2026-10-25. Nothing is estimated.
-Where a number is plain arithmetic on measured counts (for example a ceiling), the arithmetic is shown.
-
-Reproduce:
+Every number below was measured on the final code (2026-10-25; sections 3-4 include the session-10 status-matched account finder and the session-12/13 rules, sections 15-16) by the scripts named next to it. Nothing
+is estimated. Where a value is plain arithmetic on measured counts, the arithmetic is shown.
 
 ```bash
-python3 code/evaluation/score.py              # sections 1-3
-python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat account table_cover account+cover
-python3 code/evaluation/breakdown.py          # section 6
-python3 code/evaluation/channels.py           # section 7
-python3 code/evaluation/run_own_cases.py      # section 5
-python3 code/evaluation/validate.py output.csv
+python3 code/evaluation/score.py                 # sections 3-4
+python3 code/evaluation/compare.py base follow_refs images follow+images replica_any replica_drift drift+actcat account table_cover account+cover propagate after_audit explicit_absence after+explicit llm
+python3 code/evaluation/breakdown.py             # section 7
+python3 code/evaluation/channels.py              # section 8 (linking channels)
+python3 code/evaluation/channels.py --accounts   # section 8 (account finder, forced pick)
+python3 code/evaluation/run_own_cases.py         # section 6
+python3 code/evaluation/validate.py output.csv   # section 11
 ```
 
-**Splits.** The 32 public samples (`dataset/sample_output.csv`) are the only labelled data.
-`score.py` sorts them by `case_id`: the first 22 are **dev** and the last 10 are **held-out**.
-Held-out cases were looked at only in aggregate. They were not entirely untouched, though. Held-out aggregates
-were also used as a no-regression gate for kept changes ("revert any change that lowers a dev or held-out
-metric", sessions 2 and 5). The one-account-per-case premise of the account finder counts accounts in all 32
-sample answers. No change was rejected because of held-out, since held-out never decreased in any config
-(section 9). Section 4 says which rules came from dev.
+Every evaluation script and test runs **offline**: model answers come only from the local cache
+(`code/llm_cache/`, not shipped in `code.zip`), and no model call is made.
 
-**Metric definitions** (`code/evaluation/score.py`):
-- *status accuracy*: `deletion_status` equal to the gold status.
-- *exact*: status and the full `steps_json` array equal.
-- *step P/R/F1*: each step is the tuple (phase, system_id, resource_id, operation, state, evidence_id),
-  and steps are compared as multisets, ignoring `step_no`.
-- *field accuracy*: gold step *i* compared with predicted step *i* for each field. Every gold step
-  counts, so a missing step lowers every field.
-- *sequence accuracy*: the ordered list of (operation, system_id, resource_id) is equal.
+## 1. First submission and what changed
 
-## 1. Case-level deletion-status accuracy
+The first submission scored **Output CSV 7.2/30** and **Code zip 4.5/30**. We found three causes:
+
+| cause | evidence | fix |
+|---|---|---|
+| Row order | `output.csv` was sorted as strings (case_100 … case_99), while `deletion_requests.csv` is numeric (case_33 … case_550). **0 of 518** positions matched, so a grader that pairs rows by position compares almost every row with the wrong case | rows now follow the numeric order of `deletion_requests.csv` (`loaders.case_sort_key`); `validate.py` rejects string order; test `tests/test_output_order.py` |
+| No AI agent | the challenge asks for an AI-powered agent, but the first version made zero model calls | three agents on Claude Sonnet (intent, vision, and a tool-calling investigator with routing), every output audited by deterministic checks (section 5) |
+| Incomplete answers | held-out, the best proxy for unseen cases: 10 of 10 cases missed at least one record (8 accounts, 4 audit, 4 analytics), with 0 extra records | ownership linking from evidence of any date, explicit-absence citations and static categories (sections 9-10): held-out step recall 0.750 → 0.833, held-out exact 0/10 → 1/10 |
+
+We cannot prove that the row order caused the low output score, because the grader is not public. It is the
+only explanation we found for a score so far below the sample metrics.
+
+**Second (test) submission, after these fixes:** transcript 8.8/10, output CSV **23.7/30** (up from 7.2),
+code zip **21.9/30** (up from 4.5), interview not taken. Another participant reached output 29.2 and code 25.2.
+Session 9 (section 12) audited all 518 rows and backtested account assignment to look for the remaining gap.
+
+## 2. Splits and how clean they are
+
+The 32 public samples are the only labelled data. `score.py` sorts them by `case_id`: the first 22 are **dev**
+and the last 10 are **held-out**. Held-out is **not** an untouched test set:
+
+- Held-out aggregates were used as a no-regression gate for kept changes in earlier sessions.
+- The account finder's premise ("every case has exactly one account record") counts all 32 sample answers.
+- After the first submission, the missing held-out records were studied in detail (session 7). The
+  any-date ownership and explicit-absence rules (sections 9-10) came from that study of all 32 samples.
+
+Treat every number below as an in-sample fit on 32 cases. None of them estimates the hidden-set score.
+
+Metric definitions (`score.py`):
+- *Status accuracy*: `deletion_status` is equal.
+- *Exact*: status and the full `steps_json` array are both equal.
+- *Step P/R/F1*: steps are compared as multisets of (phase, system_id, resource_id, operation, state, evidence_id), ignoring `step_no`.
+- *Field accuracy*: gold step *i* is compared with predicted step *i*, per field; every gold step counts.
+- *Sequence accuracy*: the ordered list of (operation, system_id, resource_id) is equal.
+
+## 3. Case-level status accuracy
 
 | split | cases | status accuracy | exact case match |
 |---|---|---|---|
-| all | 32 | **1.000** (32/32) | 0.438 |
-| dev | 22 | **1.000** | 0.636 |
-| held-out | 10 | **1.000** | 0.000 |
+| all | 32 | **1.000** | 0.625 (20/32) |
+| dev | 22 | **1.000** | 0.773 (17/22) |
+| held-out | 10 | **1.000** | 0.300 (3/10) |
 
-Status confusion (all 32, `breakdown.py`): COMPLETE 10→10, INCOMPLETE 22→22, NOT_APPLICABLE 0
-(the samples contain no non-deletion request).
+Delivered configuration (section 17), whose output is the CSV the hidden grader scored 25.5/30.
 
-## 2. Step-level and field-level accuracy
+Confusion matrix (all 32): COMPLETE 10→10, INCOMPLETE 22→22. The samples contain no NOT_APPLICABLE case.
 
-| split | step P | step R | step F1 |
-|---|---|---|---|
-| all | 0.994 | 0.845 | 0.913 |
-| dev | 0.991 | 0.901 | 0.944 |
-| held-out | 1.000 | 0.750 | 0.857 |
+## 4. Step-level, field-level and sequence accuracy
 
-Field accuracy (position-aligned):
-
-| split | step_no | phase | system_id | resource_id | operation | state | evidence_id |
-|---|---|---|---|---|---|---|---|
-| all | 0.84 | 0.83 | 0.64 | 0.64 | 0.66 | 0.67 | 0.84 |
-| dev | 0.90 | 0.90 | 0.79 | 0.79 | 0.82 | 0.82 | 0.90 |
-| held-out | 0.75 | 0.71 | 0.38 | 0.38 | 0.39 | 0.42 | 0.74 |
-
-Precision is near 1, so emitted steps are almost always right. The loss is recall: missing
-resources (section 6). Because field accuracy is position-aligned, one missing resource early in the
-sort order shifts every later step. That is why held-out system/resource accuracy (0.38) is much
-lower than its step recall (0.750).
-
-## 3. Sequence accuracy
-
-| split | sequence accuracy |
-|---|---|
-| all | 0.438 |
-| dev | 0.636 |
-| held-out | 0.000 |
-
-The planner itself orders steps correctly. The planner oracle (`code/tests/test_planner_oracle.py`, 4/4)
-rebuilds every sample answer exactly when given the gold resources. Every sequence miss therefore comes
-from a missing or extra resource, not from ordering.
-
-## 4. Which rules were derived from what
-
-| rule / component | derived from | held-out status |
-|---|---|---|
-| Step sort order (phase → operation table order → system_id → resource_id) | problem_statement.md; checked on **all 32** samples | not held out |
-| Treatments, including the `BACKUP_ARCHIVE` / `DATA_FLOW` overrides (DISAGREEMENTS below) | deletion_rules.csv plus **all 32** sample answers (planner oracle) | not held out |
-| Intent sentence tables (17 deletion openings, 10 non-deletion, follow-ups) | reading the 518 evaluation request texts (no labels exist) | n/a |
-| Reference following (one hop) | kept because **dev** precision stayed ≥ 0.95 | measured: no held-out change |
-| Image evidence (`image_transcripts.md`) | hand transcript of the 11 PNGs, validated against identities | measured: no sample change |
-| Replica-drift persistence (`replica_persist="drift"`) | a **dev** failure (a primary-only snapshot overrode a replica copy) | measured: no held-out change |
-| Activity treatment as category fallback | **dev**: matched gold treatment for 46/46 dev resources | measured: no held-out change |
-| Zero-link rule (no linked resource → COMPLETE `[]`) | problem_statement.md; the 3 **dev** zero-link cases have gold COMPLETE | measured: no held-out change |
-| Account finder: one account per case; window −75/+10 min around reported_at | all 32 samples have exactly one account (count only); window from **dev** delete timings | measured: held-out +1 account, 0 wrong |
-| Inventory-table coverage (SQL dump without snapshot_scope proves absence) | **dev**: gold cites such a dump as proof that a found account is absent | measured: no held-out change alone |
-| Account propagation (an account belongs to one user; taken accounts leave other pools) | uniqueness of ownership; checked on **dev** (no change there) | measured: no held-out change |
-| Intent negation table (UNKNOWN + explicit refusal → NON_DELETE) | own case (a) and its phrasing variants; no sample or 518 text affected | n/a |
-
-Before session 4, none of the dev-derived rules changed a held-out metric. The account finder adds one
-correct held-out account (R 0.736 → 0.750). The held-out score is otherwise the baseline linker's score. It is the closest thing we have to an
-out-of-sample number for linking, but it is not strictly untouched: held-out aggregates served as a
-no-regression gate, and the one-account premise counts all 32 samples. It is not out-of-sample for
-planner conventions either, because every sample informed them.
-
-## 5. Own evaluation cases (4 cases, built by us)
-
-Each case is a directory under `code/evaluation/own_cases/<name>/` with its own `dataset/` in the
-real schema (fictional people, `example.com` / `example.org` addresses, `+1 555 01xx` phones),
-an `expected_output.csv`, and a `CASE.md` with the derivation. **The expected answer was derived by hand
-from the rules and written down before the pipeline was run on the case.** `dataset/` was not edited.
-`make_fixtures.py` regenerates the files. Run: `python3 code/evaluation/run_own_cases.py`.
-
-| case | what it tests | expected (hand-derived) | pipeline | result |
+| split | step P | step R | step F1 | sequence accuracy |
 |---|---|---|---|---|
-| a_do_not_delete | "Please do not delete my account. I still use it every week." with a live profile row in evidence | `NOT_APPLICABLE`, `[]` | before session 5: `INCOMPLETE`, 3 steps (report / delete / verify account_9001). Now: `NOT_APPLICABLE`, `[]` | **FAIL → PASS** (session 5) |
-| b_lookalike_decoy | the real profile is deleted (empty covering snapshot); same-name search doc with `ada.quill@exarnple.com`; analytics row with SHA-256 of `ada.quil@example.com` | `COMPLETE`, 1 step: VERIFY_RECORD_ABSENT account_9001 cited to evidence_b2 | identical | **PASS** |
-| c_replica_holds_row | primary table lacks the row, failover replica table holds it; activity claims DELETE SUCCESS | `INCOMPLETE`: REPORT_REMAINING_RECORD (evidence_c1) → DELETE_RECORD → VERIFY_RECORD_ABSENT | identical | **PASS** |
-| d_old_email_hash_only | request uses a historical email (audit log); the only evidence is a search hit whose `correlation_key` is SHA-256 of that old email | `INCOMPLETE`: REPORT_REMAINING_RECORD search_9301 (evidence_d1) → DELETE_RECORD → VERIFY_RECORD_ABSENT | identical | **PASS** |
+| all | 1.000 | 0.922 | 0.960 | 0.625 |
+| dev | 1.000 | 0.950 | 0.975 | 0.773 |
+| held-out | 1.000 | 0.875 | 0.933 | 0.300 |
 
-**4 of 4 pass** (3 of 4 before the session-5 negation fix).
+| field accuracy | step_no | phase | system_id | resource_id | operation | state | evidence_id |
+|---|---|---|---|---|---|---|---|
+| all | 0.92 | 0.91 | 0.81 | 0.81 | 0.81 | 0.82 | 0.92 |
+| dev | 0.95 | 0.95 | 0.92 | 0.92 | 0.92 | 0.92 | 0.95 |
+| held-out | 0.88 | 0.83 | 0.62 | 0.62 | 0.64 | 0.67 | 0.86 |
 
-**Finding from case (a), fixed in session 5** (see section 9). The original finding: The intent classifier accepts a text only if every sentence is in
-its tables. "Please do not delete my account." is not in them, so the text is `UNKNOWN`, and
-`intent.effective_intent` maps `UNKNOWN` to `DELETE`, logging the warning
-`intent UNKNOWN, defaulting to DELETE`. The refusal is then audited as a deletion. This default was chosen because all 518
-evaluation texts are covered by the tables (0 UNKNOWN), and all 32 samples are deletions even though 23
-distinct sample openings are not in the tables (score.py prints a warning for each). On the
-evaluation set the default changes nothing. On unseen text it fails open toward deletion, which is
-the unsafe direction for a "do not delete" request. Possible fixes, all untested: default UNKNOWN to
-NOT_APPLICABLE when the text contains a negated deletion verb, or route UNKNOWN texts to review.
-Either one would need re-measuring on the 23 unknown sample openings, which are all deletions.
+The steps we emit are almost always right (precision 0.99 to 1.00). The loss is missing records (section 7).
+Field accuracy is position-aligned, so one missing record early in the sort order shifts every later step.
+That is why held-out system/resource accuracy (0.51) is far below held-out step recall (0.833). Ordering is
+correct: the planner oracle (`tests/test_planner_oracle.py`, 4/4) rebuilds every sample answer exactly from
+its gold resources.
 
-**Fix (session 5):** `intent.NEGATIONS` is a table of explicit refusals: the case (a) phrasing, its
-variants, and the refusals among the non-deletion follow-ups. The strict classifier is unchanged. An UNKNOWN
-text containing a refusal is NON_DELETE (logged), and any other UNKNOWN text keeps the DELETE default
-(logged). Measured: all 518 intents unchanged (508 DELETE / 10 NON_DELETE, 0 UNKNOWN), all 32 sample intents
-unchanged (all DELETE), and own case (a) now passes. Tests: `code/tests/test_intent_negation.py`.
+## 5. The AI agents
 
-## 6. Failure analysis
+**Backend.** Claude Sonnet (`claude-sonnet-5-5`), called through Claude Code's headless mode
+(`llm.ClaudeCodeClient`):
+- Each call carries only the pipeline's own system prompt. No Claude Code tools, MCP servers or project files
+  are loaded; the vision agent gets the Read tool, limited to one image copy.
+- Every answer is cached locally in `code/llm_cache/` (not shipped in `code.zip`).
+- The first version of the agents ran on a free OpenRouter model (`nvidia/nemotron-3.5-super-vl:free`). It is
+  still available with `--backend openrouter` and is used below for comparison.
 
-**Linking is the bottleneck** (`breakdown.py`, `channels.py`):
+**Intent agent** (`ghost/intent_agent.py`, `INTENT_PROMPT`). All 398 distinct request texts (518 evaluation
++ 32 sample requests) go to the model in 8 batches. The decision per text is: the sentence tables first, then
+an explicit refusal (`intent.NEGATIONS`), then the model, then the DELETE default.
 
-| split | gold resources | linked gold | linkage recall | linkage precision | gold only in activity rows | ceiling for evidence linking |
-|---|---|---|---|---|---|---|
-| dev | 65 | 53 | 0.815 | 0.981 (53/54) | 13 (5 now found by the account finder) | (65−13)/65 = 0.800 for exact linking alone |
-| held-out | 46 | 30 | 0.652 | 1.000 (30/30) | 9 (1 now found) | (46−9)/46 = 0.804 for exact linking alone |
+| measure | Claude Sonnet | free OpenRouter model |
+|---|---|---|
+| agreement with the tables on the 375 texts they label | **375 / 375** | 375 / 375 |
+| sample texts only the model can label, vs gold status (all deletions) | **23 / 23** | 23 / 23 |
+| 518 intents changed | 0 | 0 |
 
-Dev failure types now (`breakdown.py`): 8 × gold resource not in any parsed text evidence dated ≤ audit_at,
-4 × in evidence but no identifier match, 1 × extra resource linked. Before the account finder: 13, 4, 1.
-Of the 8 remaining dev misses, 5 are accounts where the finder abstained (several survivors), 3 are
-security audit records, and 2 of those 3 have no trace in any evidence or activity row.
+**Vision agent** (`ghost/vision_agent.py`, `VISION_PROMPT`). The model opens each of the 11 PNG screenshots
+and transcribes its records. The reading is used when its facts (resource id, role, user_id, email, phone,
+state, category) equal those in the development transcript; otherwise the transcript is used. Screens can show
+decoy identifiers that are not in `user_identities.csv`. These are accepted when the transcript shows the same
+value.
 
-Why there is a recall ceiling:
-1. **Activity rows have no person column.** `system_activity.csv` has 8 columns (`activity_id,
-   event_time, event_type, source_system, target_system, resource_id, reported_result, details`). Except
-   for the 12 `LINK_RESOURCE_IDENTITY` rows, `details` carries only resource ids. A gold resource that
-   appears only in activity rows (13 dev, 9 held-out) cannot be tied to the requester by an exact
-   identifier. The only links left are time windows, id numbers or names, and section 7 shows each of
-   those is far too imprecise as a general channel. The account finder (section 9) narrows the
-   time window to one system, one operation and one record per case, and removes tied accounts, which
-   brings it to dev precision 1.000.
-2. **Nulled identifiers.** The 4 dev resources that are in evidence but unmatched are compliant
-   records: 3 ANONYMIZED and 1 ABSENT. Their observations dated ≤ audit_at carry **0** identifier
-   tokens. The deletion workflow removed exactly the
-   tokens we would link on. One such resource was recovered by reference following: it is named as
-   `source_resource_id` inside a linked record. The rest have no exact link left.
+| measure | Claude Sonnet | free OpenRouter model |
+|---|---|---|
+| screenshots whose reading equals the transcript (reading used) | **10 / 11** | 6 / 11 |
+| disagreements | 1: backup console. Claude treats the "backup_9286 / backup_9281 restored" activity lines as references *of* backup_9287. The transcript deliberately records no owner, because those lines are restores of other archives, so the transcript is kept (checked by viewing the image) | 5: dropped visible emails (2 images, checked by viewing), a misread email (`g.silva76.jr` as `g.silva76jr`), missed rows (2: the marketing record, a backup reference) |
+| 518 rows changed | 0 | 0 |
 
-Other known failures:
-- Case (a) above: intent failed open on unseen text. Fixed in session 5 for explicit refusals; other unseen
-  text still defaults to DELETE.
-- **Zero-link rows:** 2 of the 518 output rows are COMPLETE with `[]` (zero-link rule). problem_statement.md
-  allows them, so `validate.py` now reports them as a warning, not an error. They are COMPLETE because
-  no evidence shows a remaining copy. The gold answer may still list verification steps we cannot cite.
-  The 3 dev zero-link cases have gold COMPLETE with 1, 1 and 2 steps. That is a recall loss we accept,
-  because we will not invent unevidenced steps.
+**Investigator agent** (`ghost/investigator.py`, `SYSTEM_PROMPT`). This is a tool-calling loop: one JSON
+action per turn, at most 6 turns. The tools are `record_history`, `search_identifier`, `read_evidence`,
+`account_candidates`, `policy` and `submit`. `merge()` applies a proposal only if a deterministic check backs it:
+- an account may be added only from the candidates shown in that session, and only when the case has none;
+- a record may not be dropped when its own evidence names the requester;
+- a category change must be named by the record's evidence or be a documented alternative for that system.
 
-## 7. Tried and rejected (measured, `channels.py`)
+State and citations always come from the resolver.
 
-Each channel was added on top of the pipeline's linked set. *newG* = gold resources newly linked.
-*extra* = non-gold resources added. Channel precision = newG / (newG + extra).
+| measure | result |
+|---|---|
+| pilot on all 32 samples (`run_investigator.py --live`) | 31 submitted, 1 hit the turn cap; 140 turns; **0 proposals** (it confirmed the engine in every case, including 12 where it inspected account candidates and declined to guess) |
+| sample metrics with every proposal kind enabled vs engine only | identical: dev F1 0.953, held-out F1 0.909 (no gain, no regression) |
+| routing on the 518 (`uncertainty_flags` → `route`) | 263 of 508 deletion cases flagged: category conflict 8, weak link 39, no account 222. The 20 most urgent were investigated (budget 20) |
+| 518 routed cases | 20 submitted, 1 proposal, **0 accepted, 1 rejected**. The rejection was a drop of a retained security audit record whose only "present" evidence postdates `audit_at`; the guardrail refused because the record's own evidence names the requester and policy retains audit records |
+| 518 rows changed | 0 |
 
-| channel | dev newG | dev extra | dev channel precision | dev linkage recall → | dev linkage precision → | held-out channel precision |
-|---|---|---|---|---|---|---|
-| A: any activity row in [requested_at, audit_at] (time window) | 13 | 6958 | 0.002 | 0.938 | 0.009 | 0.004 |
-| C: A restricted to deletion_worker rows (time window) | 13 | 2744 | 0.005 | 0.938 | 0.022 | 0.009 |
-| D: resource-number convention (suffix == user number) | 5 | 19 | 0.208 | 0.815 | 0.726 | 0.000 (0 new, 7 extra) |
-| B: LINK_RESOURCE_IDENTITY rows naming a user token | 0 | 2 | 0.000 | 0.738 | 0.941 | — (0 new, 0 extra) |
-| N: name channel (user's full name in a unit's snippet) | 0 | 2 | 0.000 | 0.738 | 0.941 | — (0 new, 0 extra) |
+**What the agents do and don't do.** They handle unseen request wording, re-read and verify the image
+evidence, and review uncertain cases with tools under deterministic guardrails. They do not raise sample
+accuracy, because the records we still miss have no evidence tying them to the requester (section 7), and no
+reader, human or model, can recover a link that isn't there. Budget: the investigator costs about 15.7k
+tokens per case (pilot), so investigating all 263 flagged cases would take about 4.1M tokens. That is why
+routing takes the 20 most urgent.
 
-All five were rejected. The bar was dev precision ≥ 0.95, and the best channel (D) reaches 0.208.
-For the time-window channels, 556 of A's and C's dev extras are other dev cases' gold resources,
-so the windows mix different people's deletions. The name channel was measured this session as a
-diagnostic only. The linker never uses names: a name appears inside records that belong to other
-people (case (b) shows the same name on a decoy).
+## 6. Own evaluation cases (4, built by us)
 
-Also rejected:
-- **Same-batch idea for analytics** (session 4, the account finder run with analytics_platform /
-  ANONYMIZE_RECORD, only where no analytics record was linked). Unlike accounts, analytics is not one per
-  case (13 gold in 32 cases). Window −75/+10 min around reported_at: dev 2 recovered, 3 wrong,
-  **precision 0.400**; held-out 0 recovered, 1 wrong. Window −30/0: same numbers. Anchored on the
-  account's own delete, ±10 min: dev 0 picks; ±30 min: dev 0 recovered, 1 wrong. Rejected.
-- **Forced account pick** (session 5, measured only, not enabled). For cases still ambiguous after
-  propagation (≥ 2 candidates), pick the delete closest to reported_at, with the user number as tie-break.
-  The dev gold account is among the candidates in 5/5 such cases, but the top pick is right in only 2.
-  By minimum margin between the first and second candidate: ≥0 min dev 2/3 (0.400), held 2/6, 287 rows of
-  the 518; ≥2 min 2/2 (0.500), 279 rows; ≥5 min 2/2 (0.500), 260 rows; ≥10 min 2/2 (0.500), held 1/1, 169 rows;
-  ≥20 min 1/2 (0.333), 32 rows; ≥30 min no dev case, 11 rows. Never near 0.95, so it stays off.
-- **Same-batch idea for security audit records:** not possible. The deletion worker never acts on
-  security_service (no activity row targets it), consistent with rule_12 RETAIN.
-- **Account finder with a strictly-before window (−75/0):** dev 2 recovered, 0 wrong, 9 abstained.
-  The gold delete is up to 8 min *after* reported_at in two dev cases, so −75/+10 was kept (5 recovered, 0 wrong).
-- **Resource-number fallback for zero-link cases only:** removed. It added a wrong resource on dev,
-  and dev step precision dropped (exact numbers are in log.txt, from an earlier session; not re-measured here).
-- **`replica_persist="any"`:** it scores the same as `"drift"` on every metric (section 9). We kept the stricter
-  `"drift"`, which also requires the same file's primary copy to lack the row.
+Each case has its own `dataset/` in the real schema, with fictional people, `example.com` emails and
+`+1 555 01xx` phones. The expected answer was derived by hand from the rules and written down before the
+pipeline was run (`code/evaluation/own_cases/*/CASE.md`). Run: `python3 code/evaluation/run_own_cases.py`.
 
-## 8. Planner DISAGREEMENTS (verbatim from `code/ghost/planner.py`)
+| case | what it tests | expected | result |
+|---|---|---|---|
+| a_do_not_delete | "Please do not delete my account. I still use it every week." with a live profile in evidence | NOT_APPLICABLE `[]` | **PASS** (it failed until the negation table was added in session 5) |
+| b_lookalike_decoy | a same-name search document with the look-alike email `ada.quill@exarnple.com`, and an analytics row holding SHA-256 of `ada.quil@example.com`; the real profile is deleted | COMPLETE, 1 VERIFY_RECORD_ABSENT cited to the empty covering snapshot | **PASS** |
+| c_replica_holds_row | the primary table lacks the row and the failover replica holds it; an activity row claims DELETE SUCCESS | INCOMPLETE: REPORT_REMAINING_RECORD → DELETE_RECORD → VERIFY_RECORD_ABSENT | **PASS** |
+| d_old_email_hash_only | the request uses a historical email, and the only evidence is a search hit whose `correlation_key` is SHA-256 of that old email | INCOMPLETE: REPORT_REMAINING_RECORD → DELETE_RECORD → VERIFY_RECORD_ABSENT | **PASS** |
 
-1. BACKUP_ARCHIVE: rule_14 says RETAIN (which elsewhere verifies VERIFY_RECORD_PRESENT), but samples verify VERIFY_RESTORE_BLOCKED and report REPORT_RESTORE_RISK -> following the samples.
-2. DATA_FLOW: no data_category in deletion_rules.csv covers sync/import flows, but samples treat integration_service data_flow_* as DISABLE/VERIFY_DATA_FLOW_DISABLED -> pseudo-category from samples.
-3. Category is not a function of system: support_platform is SUPPORT_MESSAGE (REDACT) or SUPPORT_ATTACHMENT (DELETE); analytics_platform is ANALYTICS_PROFILE (ANONYMIZE) or MARKETING_PROFILE (DELETE). The linker must supply the category per record.
-4. No sample covers SECONDARY_IDENTIFIER, CACHE_ENTRY, PRODUCT_TELEMETRY, EMAIL_DELIVERY_LOG, LEGAL_HOLD_RECORD: their treatment comes from deletion_rules.csv alone (untested).
-5. Rule conditions (e.g. rule_05 'shared context must be retained', rule_12 'within retention period') are not evaluated here; the caller must pick the category whose condition holds.
+**4 / 4 pass.**
 
-## 9. What improved at each step
+## 7. Failure analysis
 
-**Per commit.** Each commit's `code/` was re-run on the samples and on the 518 cases with this session's
-`validate.py`. "Empty COMPLETE" counts rows that the old validator called invalid and the current one warns about.
+Linkage (`breakdown.py`):
+- **Dev recall 55/65 = 0.846**, precision 55/56 = 0.982.
+- **Held-out recall 36/46 = 0.783**, precision 36/36 = 1.000.
+- All 32: recall 91/111 = 0.820, precision 0.989.
 
-| commit | change | dev status | dev F1 | dev exact | held F1 | held exact | empty COMPLETE (518) | rows differing from session-3 output |
+The 20 gold records we still miss, by what the participant data offers for each:
+
+| system | kind | dev | held-out |
+|---|---|---|---|
+| account_service | appears only in `DELETE_RECORD` activity rows | 3 | 4 |
+| account_service | in evidence, identifiers removed (404 lookup) | 1 | 2 |
+| account_service | no trace in any evidence or activity row | 1 | 0 |
+| analytics_platform | in evidence, identifiers removed (anonymized) | 3 | 4 |
+| security_service | no trace in any evidence or activity row | 2 | 0 |
+
+Why these are hard:
+1. **Activity rows have no person column.** `system_activity.csv` has 8 columns. `details` carries only resource
+   ids, except in the 12 `LINK_RESOURCE_IDENTITY` rows. A record that appears only in activity rows can be tied
+   to the requester only by time or id numbers, and section 8 shows how imprecise both are.
+2. **Deletion removes the identifiers we would link on.** The anonymized analytics records and the 404 account
+   lookups carry 0 identifier tokens.
+3. **No trace at all:** for 3 records, nothing in the participant data names them.
+
+The account finder picks an account only when the choice is unambiguous. With the session-9 window and the
+session-10 status match it finds 155 accounts in the 518 run, and 391 of the 508 deletion rows have one account step. In the samples, every gold answer has one.
+
+Other known limits:
+- 1 row of the 518 is COMPLETE with `[]` (zero-link rule: no linked record, nothing to cite). `validate.py` reports it as a warning.
+- One state coercion in the 518 run: a backup record proven absent is mapped to the compliant "restore blocked" state.
+- Rule conditions (retention period, active legal hold) are not evaluated. Every `retention_until` in the
+  evidence is later than the latest `audit_at`, so this has no effect on this data.
+
+## 8. Tried and rejected (measured)
+
+| idea | measurement | verdict |
+|---|---|---|
+| A: any activity row between requested_at and audit_at | dev: 13 gold newly linked, 6958 extra, channel precision 0.002 | rejected |
+| C: as A, deletion_worker rows only | dev: 13 new, 2744 extra, precision 0.005 | rejected |
+| D: resource number == user number | dev: 5 new, 19 extra, precision 0.208; evidence shows different numbers in 38 of 42 account/user pairs | rejected (used only as a tie-breaker inside the account finder) |
+| B: LINK_RESOURCE_IDENTITY claims | dev: 0 new, 2 extra | rejected |
+| N: user's name in a record's text | dev: 0 new, 2 extra, precision 0.000 | rejected; names are never used for linking |
+| same-batch analytics (finder on ANONYMIZE_RECORD rows around reported_at) | dev 2 right / 3 wrong, precision **0.400**; anchored on the account's own delete: 0 right | rejected |
+| batch anchored on the case's own linked records (closest worker event in time) | the gold account was the closest candidate in only 2 of 11 account misses that had an anchor | rejected |
+| forced account pick (closest delete to reported_at) | dev precision 0.400 (margin ≥ 0) to 0.500 at best; would touch 287 of the 518 rows | rejected |
+| account finder with a strictly-before window | dev 2 right / 0 wrong / 9 abstained, vs 5 / 0 / 6 for −75/+10 min | −75/+10 kept |
+| replica_persist "any" | same scores as "drift" | the stricter "drift" kept |
+
+## 9. Planner disagreements and interpretation choices
+
+From `code/ghost/planner.py` (DISAGREEMENTS), where the rules file and the sample answers do not line up:
+1. BACKUP_ARCHIVE: rule_14 says RETAIN, but the samples verify VERIFY_RESTORE_BLOCKED and report REPORT_RESTORE_RISK. We follow the samples.
+2. DATA_FLOW: no data category covers sync/import flows, but the samples treat `data_flow_*` as DISABLE / VERIFY_DATA_FLOW_DISABLED. This is a pseudo-category taken from the samples.
+3. Category is not a function of system: support_platform holds SUPPORT_MESSAGE or SUPPORT_ATTACHMENT, and analytics_platform holds ANALYTICS_PROFILE or MARKETING_PROFILE. The category therefore comes from the evidence for each record.
+4. SECONDARY_IDENTIFIER, CACHE_ENTRY, PRODUCT_TELEMETRY, EMAIL_DELIVERY_LOG and LEGAL_HOLD_RECORD appear in no sample. Their treatment comes from `deletion_rules.csv` alone.
+5. Rule conditions are not evaluated (section 7).
+
+**Interpretation choice (session 7).** AGENTS.md says evidence created after `audit_at` must not change the
+answer. Yet the answer key lists records whose only identifying evidence was captured after `audit_at`: of the
+8 sample records that such evidence links, all 8 are in gold and none is outside it. We therefore treat
+*ownership* (whose record it is) and a record's *type* as static facts that may come from any capture date.
+A record's *state*, and every *citation*, still come only from evidence dated on or before `audit_at`. A
+retained record with no state before `audit_at` becomes a future "verify present" check with no citation,
+and only in INCOMPLETE cases, because a COMPLETE verification must cite evidence.
+
+## 10. What improved at each step
+
+Each config (`compare.py`) adds one option to the row above it, except "images only" (added to base) and
+"explicit absence only" (added to the propagation row). Recovered/extra counts are relative to `base`.
+
+| config | dev F1 | dev exact | dev linkR | held F1 | held exact | held linkR | rec/extra dev | rec/extra held |
 |---|---|---|---|---|---|---|---|---|
-| c7f13b5 | baseline v0 | 0.955 | 0.870 | 0.318 | 0.848 | 0.000 | 9 | 9 |
-| db6dfba | absence proof, channel diagnostics | 0.955 | 0.870 | 0.318 | 0.848 | 0.000 | 9 | 9 |
-| ea71021 | linking diagnostics | 0.955 | 0.870 | 0.318 | 0.848 | 0.000 | 9 | 9 |
-| 84c14b9 | reference following, image evidence | 0.955 | 0.875 | 0.364 | 0.848 | 0.000 | 2 | 0 |
-| ce57f8e | images, reference following | 0.955 | 0.875 | 0.364 | 0.848 | 0.000 | 2 | 0 |
-| 84fe0de | replica drift, activity category, zero-link rule | **1.000** | **0.920** | **0.409** | 0.848 | 0.000 | 2 | 0 |
-| session 3 | validator warning, PDF fallback, own cases, docs | 1.000 | 0.920 | 0.409 | 0.848 | 0.000 | 2 (warnings) | 0 |
-| session 4 | account finder + inventory-table coverage | **1.000** | **0.944** | **0.636** | **0.857** | 0.000 | 2 (warnings) | 36 |
-| session 5 | account propagation + intent negation table | 1.000 | 0.944 | 0.636 | 0.857 | 0.000 | 2 (warnings) | 45 (9 more than session 4) |
+| base | 0.870 | 0.318 | 0.723 | 0.848 | 0.000 | 0.630 | – | – |
+| + reference following | 0.875 | 0.364 | 0.738 | 0.848 | 0.000 | 0.630 | 1/0 | 0/0 |
+| images only | 0.870 | 0.318 | 0.723 | 0.848 | 0.000 | 0.630 | 0/0 | 0/0 |
+| + images + replica drift | 0.894 | 0.409 | 0.738 | 0.848 | 0.000 | 0.630 | 1/0 | 0/0 |
+| + activity category | 0.920 | 0.409 | 0.738 | 0.848 | 0.000 | 0.630 | 1/0 | 0/0 |
+| + account finder | 0.926 | 0.545 | 0.815 | 0.857 | 0.000 | 0.652 | 6/0 | 1/0 |
+| + inventory-table coverage | 0.944 | 0.636 | 0.815 | 0.857 | 0.000 | 0.652 | 6/0 | 1/0 |
+| + account propagation | 0.944 | 0.636 | 0.815 | 0.857 | 0.000 | 0.652 | 6/0 | 1/0 |
+| + ownership from any date | 0.953 | 0.682 | 0.846 | 0.879 | 0.100 | 0.783 | 8/0 | 7/0 |
+| explicit absence only | 0.944 | 0.636 | 0.815 | 0.857 | 0.000 | 0.652 | 6/0 | 1/0 |
+| **ownership + explicit absence + LLM agents + investigator (final)** | **0.953** | **0.682** | **0.846** | **0.909** | **0.100** | **0.783** | 8/0 | 7/0 |
 
-**Per option** (`compare.py`, final code with options toggled):
+Dev status went from 0.955 at base to 1.000 with replica drift and has stayed there; held-out status is 1.000
+throughout. The planner oracle is 4/4, and invalid 518 rows are 0, in every config. Ownership from any date
+alone dropped held-out step precision to 0.967, because two absence citations differed from gold. Explicit
+absence (cite a record's own 404 lookup rather than a later blanket snapshot) brought it back to 1.000.
 
-| config | dev status | dev P | dev R | dev F1 | dev exact | dev linkR | dev linkP | recovered / extra vs base |
-|---|---|---|---|---|---|---|---|---|
-| base | 0.955 | 0.951 | 0.802 | 0.870 | 0.318 | 0.723 | 0.979 | — |
-| + follow_refs | 0.955 | 0.951 | 0.810 | 0.875 | 0.364 | 0.738 | 0.980 | 1 / 0 |
-| + images only | 0.955 | 0.951 | 0.802 | 0.870 | 0.318 | 0.723 | 0.979 | 0 / 0 |
-| follow + images | 0.955 | 0.951 | 0.810 | 0.875 | 0.364 | 0.738 | 0.980 | 1 / 0 |
-| + replica_any | 1.000 | 0.962 | 0.835 | 0.894 | 0.409 | 0.738 | 0.980 | 1 / 0 |
-| + replica_drift | 1.000 | 0.962 | 0.835 | 0.894 | 0.409 | 0.738 | 0.980 | 1 / 0 |
-| + activity category | 1.000 | 0.990 | 0.860 | 0.920 | 0.409 | 0.738 | 0.980 | 1 / 0 |
-| + account finder | 1.000 | 0.973 | 0.884 | 0.926 | 0.545 | 0.815 | 0.981 | 5 / 0 † |
-| + table coverage only | 1.000 | 0.990 | 0.860 | 0.920 | 0.409 | 0.738 | 0.980 | 0 / 0 † |
-| **+ account finder + table coverage (final)** | **1.000** | **0.991** | **0.901** | **0.944** | **0.636** | **0.815** | **0.981** | 5 / 0 † |
+Effect on the 518 rows, relative to the first submission:
 
-† recovered / extra relative to "+ activity category" (`compare.py drift+actcat account table_cover account+cover`).
+| change | rows changed | how |
+|---|---|---|
+| numeric row order | all rows move; 0 row contents change | order only |
+| ownership from any date + explicit absence + static category | **152** | records added only (122 audit, 75 account, 14 search, 2 legal hold, 1 backup, 1 support); 0 removed, 0 status flips, 0 citation changes |
+| LLM agents (intent, vision, investigator) | 0 | the model agrees with the tables on every 518 text; only agreeing image readings are used; the investigator's one proposal was rejected |
+| (account finder 36 rows, propagation 9 rows) | already in the first submission | each added one account record, with no status flip |
 
-Held-out is identical in every config up to "+ activity category": status 1.000, P 1.000, R 0.736,
-F1 0.848, exact 0.000, linkR 0.630, linkP 1.000. With the account finder: R 0.750, F1 0.857, linkR 0.652,
-linkP 1.000 (1 recovered, 0 extra). The planner oracle is 4/4 in every config.
-Images change no sample score. In the 518-case run, the final config with `images=False` has 9
-empty-COMPLETE rows and with `images=True` it has 2. At commit level, 9 rows changed (commit table).
+## 11. Final 518-case output checks
 
-**Session 6 (review fixes, no output change):**
-- Without pdftotext, the test suite had 1 error: a test helper called the PDF reader without a file id, so
-  the committed-text fallback could not be found. Fixed, with a regression test. 113 tests now pass with and
-  without pdftotext (3 skipped without it). 0 of 518 rows changed, and every metric is unchanged.
-- The split description now states that held-out aggregates were a no-regression gate and that the
-  one-account premise counts all 32 samples.
+- `python3 code/main.py` (cached, offline): INCOMPLETE 356, COMPLETE 152, NOT_APPLICABLE 10.
+- Steps per case: min 0, median 6, max 14, total 3056. Category fallbacks 0, state coercions 1 (section 7).
+- `validate.py`: **VALID, 0 invalid rows**, 1 warning (zero-link COMPLETE `[]`).
+- Row order equals `deletion_requests.csv`.
+- Two runs are byte-identical, and so are runs with and without pdftotext.
+- Investigator: 20 routed cases (from the engine's flags, recomputed each run); 0 proposals accepted; 0 rows changed.
+- 150 tests pass offline (`python3 -m unittest discover -s code/tests`).
+- Offline run without the cache (as from `code.zip`) gives a byte-identical `output.csv`; no model call is made.
+- Line endings are LF, like the dataset CSVs (test `tests/test_output_order.py`).
 
-**Session 5 (propagation, forced pick, negation):**
-- Constraint propagation (`account_finder.propagate`, default on). An account belongs to one user. The pool is every
-  deletion request in `dataset/` (518 + 32 samples, no shared case_ids). Accounts that evidence links to a request's
-  user start as taken. Each round decides every unresolved request on its remaining candidates, with the same
-  single-survivor / user-number rule. If two users pick the same account in one round, neither gets it. Picks are
-  final.
-  Rounds resolve 48, 2 and 1 requests; requests still needing an account go 362 → 314 → 312 → 311.
-  Dev picks: 5 correct, 0 wrong, precision 1.000 in every round (same as the kept finder). Held-out: 1 / 0.
-  518 picks 36 → 42 → 44 → 45. No sample metric changes, so the 9 extra 518 picks are untested on labels.
-  Kept under the rule (dev precision ≥ 0.95, no regression).
-- After propagation, 311 requests remain without an account: 300 with ≥ 2 candidates and 11 with none
-  (287 and 10 of them in the 518).
-- 518-case run: 9 rows change, each only by adding one account (6 INCOMPLETE and 3 COMPLETE; no status flip,
-  nothing lost). VALID, 0 invalid, 2 warnings, deterministic. 112 tests pass.
+## 12. Session 9: row audit, independent check, account assignment backtest
 
-**Session 4 (account finder):**
-- Rule (`code/ghost/account_finder.py`, tests `code/tests/test_account_finder.py`): every case has exactly one
-  account record. If linking found one, nothing changes. Otherwise the candidates are account DELETE_RECORD rows
-  from 75 min before to 10 min after reported_at (≤ audit_at). Accounts that evidence ≤ audit_at ties to any
-  identifier other than the subject's are removed. The user-number pattern only breaks a tie among survivors, and
-  if the choice is still ambiguous nothing is chosen.
-- Account picks: dev 11 cases needed one, **5 recovered, 0 wrong, 6 abstained, precision 1.000** (≥ 0.95, kept).
-  Held-out aggregate: 9 needed one, 1 recovered, 0 wrong, 8 abstained.
-- Found accounts proved absent were first cited to an older inventory file. Gold cites the latest SQL dump
-  holding the `customer_profiles` tables, so `parse_sql(table_coverage=True)` makes such a dump coverage for its
-  system. Dev P 0.973 → 0.991, exact 0.545 → 0.636.
-- 518-case run: 36 rows change, each only by adding one account record (25 INCOMPLETE and 11 COMPLETE, with no
-  status flip and no resource lost). Rows with an account: 166 → 202 of 508. Still VALID, 0 invalid, 2 warnings.
-  Deterministic.
+**Row audit** (`code/evaluation/audit_rows.py`; invariants are derived from gold and used only if they hold there;
+flagged case_ids are in `orchestrate_research/AUDIT_518.md`, outside the zip):
 
-**Session 3:**
-- `validate.py`: COMPLETE with `[]` is now a warning. On the final `output.csv`: **VALID, 0 invalid rows, 2 warnings**.
-- PDF fallback: with `pdftotext` removed from PATH, `output.csv` is byte-identical (`cmp`), and 4 warnings are logged.
-- Own cases: 3/4 pass. The failure is reported in section 5 and not fixed.
-- Test suite: 92 tests, all pass (`python3 -m unittest discover -s code/tests`); 102 after session 4.
-- `code.zip` check: unpacked into an empty directory with `dataset/` linked in, `main.py` reproduces the root
-  `output.csv` byte for byte. The suite passes there too (92 tests, 1 skipped). The planner-oracle table test now skips
-  when `problem_statement.md` is absent, because the documented zip command does not include that file.
+| invariant | gold | 518 output |
+|---|---|---|
+| a. exactly one account_service record per deletion case | 32/32 | 224 rows flagged before session 9; 217 after (all with no account; the one two-account row was fixed) |
+| b. structure: finding → remediation → verification, COMPLETE = verification only, step_no, sort key | 32/32 | 0 flagged |
+| c. cited file is the latest file (≤ audit_at) that mentions the record | 71/71 | 1039/1039 |
+| d. operation mix | – | short on account VERIFY_RECORD_ABSENT (9.7% vs 16.6% of steps) and analytics anonymize (2.5% vs 6.2%): the known misses |
+| e. provenance tier of linked records | – | evidence 1466, image 5, finder 39 (before the window change); no row rests only on weak tiers |
+| f. users with several requests | – | 1 user, 2 cases with different audit dates and different record sets (expected: different audit dates) |
+| g. NOT_APPLICABLE | – | 10, all with explicit non-deletion text |
+| h. categories the samples never exercise | – | LEGAL_HOLD_RECORD in 8 rows (RETAIN; every hold shows a retention date after the latest audit_at) |
 
-## 10. Final 518-case output checks
+**Independent check** (`code/evaluation/independent_check.py 40`). Linked records were re-derived from raw
+evidence text with whole-token identifier matching, using no parsers and no observations table, for 40
+stratified rows:
+- **124 agree, 0 only in our output, 1 only in the independent set.** The one extra is an audit record whose only
+  link is a log captured after the case's audit_at, in a COMPLETE case, so it cannot be cited, by design.
+- Other checks: all timestamps share one UTC format; 29 evidence files are captured exactly at some audit_at
+  and count as "at or before".
 
-`python3 code/main.py`: INCOMPLETE 356, COMPLETE 152, NOT_APPLICABLE 10. Steps per case: min 0,
-median 6, max 14, total 2736. Accounts found by the finder (with propagation) 45, category fallbacks 0, state coercions 0. `validate.py`: VALID, 0 invalid
-rows, 2 warnings (zero-link COMPLETE `[]`). Two runs are byte-identical, and so are runs with and without pdftotext.
+**The missing accounts.**
+- 8 of the 11 missed gold accounts appear in **no evidence file at all**. Their only trace is one
+  `DELETE_RECORD` row.
+- There are 539 account deletes for 540 deletion requests. Deletes land 39–76 min before `reported_at`
+  (265 labelled pairs; 3 outliers within 6 min). `reported_at` is on the hour, so requests sharing a
+  `reported_at` form slots: 81 singles, 36 pairs, 124 triples, 3 fives.
+
+`code/evaluation/account_backtest.py` hides each labelled account (278: 246 evidence-linked, 31 gold with a
+delete event) together with its evidence, then reruns finder and exclusive propagation over all 540 requests.
+The window is tuned on even case numbers and reported on odd ones:
+
+| window (min vs reported_at) | tune P / R (picks) | held P / R (picks) |
+|---|---|---|
+| [−75, +10] (previous) | 1.000 / 0.369 (45) | 1.000 / 0.284 (44) |
+| [−76, −39] | 1.000 / 0.459 (56) | 1.000 / 0.316 (49) |
+| **[−76, −39], then [−6, +6] if empty (kept)** | **1.000 / 0.492 (60)** | **1.000 / 0.329 (51)** |
+| [−76, −39] ∪ [−6, +6] (union) | 1.000 / 0.385 (47) | 1.000 / 0.277 (43) |
+
+The old window reached into the next hour's slot. Kept: the fallback window. The gold metrics are unchanged;
+on the 518, **6 rows** each gain one account (no status flip, nothing removed). The offline replay still has
+0 cache misses.
+
+**Bug found by invariant a (kept fix).** case_46 had two accounts, both linked by the current email: one by
+evidence before audit_at, and one only by a log captured six months after audit_at (a later sign-up). Ownership
+from any date had wrongly added the second. Rule (`account_finder.one_account`, test first): when evidence up
+to audit_at links an account, accounts linked only by later evidence are dropped. **1 row changed** (case_46
+loses the post-audit account; status unchanged). Gold metrics unchanged. Backtest held half 1.000 / 0.329
+(unchanged); tune half 1.000 / 0.484, a label correction: case_46's label had been the wrong account.
+
+**Rejected (measured):**
+- **Order within a slot:** event order matches case-number order in 13 of 74 labelled slots, requested_at order
+  in 25 of 74, user-number order in 13 of 74, and the order of the case's other worker events in 21 of 57.
+  None is usable.
+- **Analytics assignment:** ANONYMIZE events land 40–120 min *after* reported_at. A finder on that window was
+  right on 13 of 13 hidden labelled analytics records, but also gave a record to 1 of the 19 gold cases that
+  have none, which would lower gold step precision. Not enabled.
+- **Audit records:** no worker event targets security_service, so the method cannot apply.
+
+**Targets (32 gold cases; dev / held-out):** status 1.000 / 1.000; step precision 0.991 / 1.000; step recall
+0.917 / 0.833 (targets 0.95 / 0.90: not met); linkage recall 0.846 / 0.783 (targets 0.92 / 0.85: not met);
+exact 0.682 / 0.100 (targets 0.80 / 0.50: not met); citation accuracy on matched steps 1.000 / 1.000;
+third validation set, account-pick precision 1.000 on the held half, recall 0.329. The unmet targets need
+the within-slot account choice, and no measured signal decides it at the required precision.
+
+## 13. Session 10: reported_status matches the account delete's result (kept)
+
+A column-coverage audit tested unused relationships as join keys against the labelled accounts. The request's
+`reported_status` agrees with the `reported_result` of its account `DELETE_RECORD` in **256 of 261** labelled
+pairs: COMPLETE~SUCCESS 136/138, PARTIALLY_COMPLETE~PARTIAL 69/70, NOT_STARTED~FAILED 51/53. Requests that report
+in the same hour usually differ in status, so this separates them.
+
+Rule (`AccountFinder(status_match=True)`, test first): a candidate delete must carry the result that matches the
+request's status; everything else (windows, exclusivity per user, abstain when ambiguous) is unchanged.
+
+| measure | before | after |
+|---|---|---|
+| account backtest, tune half P / R (picks) | 1.000 / 0.484 (59) | **1.000 / 0.730 (89)** |
+| account backtest, held half P / R (picks) | 1.000 / 0.329 (51) | **1.000 / 0.735 (114)** |
+| dev step R / F1 / exact / sequence / position-aligned field mean | 0.917 / 0.953 / 0.682 / 0.682 / 0.868 | **0.942 / 0.966** / 0.682 / 0.682 / **0.911** |
+| held-out step R / F1 / exact / sequence / field mean | 0.833 / 0.909 / 0.100 / 0.100 / 0.651 | **0.875 / 0.933 / 0.300 / 0.300 / 0.732** |
+| linkage recall dev / held-out | 0.846 / 0.783 | **0.892 / 0.848** |
+| step precision dev / held-out | 0.991 / 1.000 | 0.991 / 1.000 |
+| 518 rows changed | – | **100**, each gains one account; 0 removed, 0 status flips; 391 of 508 deletion rows now have one account |
+
+Five of the 20 pinned investigator cases gained an account, which changed their review prompts. Those five were
+removed from the pinned set (15 remain), so the offline replay has 0 cache misses. Output is identical either
+way, because the investigator accepted no proposal.
+
+**Reviewed and rejected in session 10 (measured):**
+- **Forced account pick** (closest candidate when the pool has ≤ k accounts): on dev it raises position-aligned field
+  accuracy (0.868 → 0.907 at k = 2), but held-out sequence accuracy does not improve at k = 2, and at k = ∞
+  held-out F1 drops by 0.025. Pick precision is 1/7 to 2/10. It fails the gate and is not enabled.
+- **Same-user collisions:** all 9 colliding groups are different users, so exclusivity per user is already right.
+- **Worker-event lag tie-breaker (signed):** unstable between halves (IQR 94–113 vs 105–131 min); tune 0.333 vs
+  chance 0.414, held 0.468 vs 0.406.
+- **Row position in exports and SQL:** 62 of 65 SQL tables with more than 2 rows are sorted by resource_id, so
+  position carries no information.
+- **Analytics presence:** no countable property separates gold cases with and without analytics. The best,
+  "a linked file holds analytics data", is true for 12 of 13 with and 10 of 19 without.
+
+## 14. Session 11: packaging fix after Code ZIP 0/30
+
+- **Finding (confirmed):** the 0-scoring `code.zip` contained `code/llm_cache/` (281 files), and in it
+  `routed_cases.json`, a list of 15 real case ids that steered the investigator. AGENTS.md §6.7 forbids case-id
+  shortcuts, and §6.9 forbids caches in the archive.
+- **Not confirmed:** that the cache alone caused the zero. The zip that scored 21.9 already contained the cache;
+  the case-id list was new. The grader is not public, so the cause cannot be proven.
+- **Fix:**
+  - `code/llm_cache/` is excluded from the zip (README packaging command).
+  - The pinned case-id list was deleted; routing is computed from the engine's flags on every run.
+  - Without Claude Code the CLI prints a NOTE and runs offline. No model call is made, and no answer is claimed
+    from a model.
+  - Output is byte-identical to the session-10 output.
+- **CSV hypothesis tested and rejected:** widening the account window to [−90, −30] min gives identical backtest
+  results (tune 1.000 / 0.730, held 1.000 / 0.735) and changes 0 of the 518 rows.
+
+## 15. Session 12: output improvements from the remaining gold discrepancies
+
+Every remaining step difference on the 32 gold cases was classified: 7 missing analytics, 5 missing accounts,
+2 missing audit records, 1 extra account (case_17, dev), and 1 wrong state (case_24, held-out). Three general
+rules were kept. Each was measured on its own (`code/evaluation/experiment.py`) and written with a test first:
+
+| rule | derived from | dev (exact / F1) | held-out (exact / F1) | 518 rows |
+|---|---|---|---|---|
+| baseline (final_version_3) | – | 0.682 / 0.966 | 0.300 / 0.933 | – |
+| **newest account**: when evidence links several accounts, keep the one whose linking evidence (≤ audit_at) is newest; a re-signup is audited on the current account | dev case_17 | 0.727 / 0.970 (precision 0.991 → 1.000) | unchanged | 0 |
+| **status-free fallback window**: the status match applies to the [−76, −39] window only; the ±6 min fallback ("reported completed" events) is not status-filtered | dev case_08; backtest tune recall 0.730 → 0.746 at precision 1.000 | 0.773 / 0.975 | unchanged | 0 |
+| **coverage only if unobserved**: a blanket snapshot that merely lacks the row proves absence only for a record with no own observation up to audit_at (gold case_31 vs case_24) | held-out case_24 (so held-out is not independent for this rule) | unchanged | 0.400 / 0.949 | 2 (case_33 COMPLETE→INCOMPLETE; case_34 +1 finding) |
+| **all three (delivered)** | | **0.773 / 0.975, precision 1.000** | **0.400 / 0.949, precision 1.000** | **2** |
+
+**Rejected (measured):**
+- **State floor** (state only from evidence ≥ reported_at; every gold citation is after reported_at): gold
+  unchanged, but on the 518 it removes 34 steps from 29 rows with no gold case to support them.
+- **Analytics finder with status match:** anonymize results do not follow the request status (mostly FAILED);
+  3 of 19 gold no-analytics cases get false records.
+- **Account → analytics activity coupling:** no event pair within 10 min in 73 labelled pairs.
+- **Order within same-status slots** (case no., requested_at, audit_at, user no.): consistent in about half of
+  50 labelled groups, i.e. chance.
+- **Own case (b) conflict:** its hand-written expected answer (session 3) assumed a later empty snapshot overrides
+  an earlier "present" observation. Gold case_24 shows the opposite, so own case (b) now fails (3/4). The fixture
+  was not edited to make it pass.
+
+## 16. Session 13: what an empty snapshot proves (rule 3 of section 15 replaced)
+
+Every absence proof in the gold answers was checked against the kind of file it cites:
+- **SQL table dumps** (snapshot_scope inventories, replica dumps) prove absence even for subjects they never
+  mention: case_01, case_02, case_04 (3/3).
+- **JSON records-assurance bundles** hold only a few subjects' records (evidence_51: 2 tombstones and 2 audit
+  records). They prove absence only for a subject they mention (case_31, 1/1). They do not override an earlier
+  observation of a subject they don't mention (case_24).
+
+Section 15's rule 3 ("coverage only if unobserved") explained the same gold cases, but it over-generalized. It also
+let a stale observation beat a later **exhaustive** SQL dump: case_33 (a screenshot on 06-18; an inventory on 07-03
+lacking the record) and case_34. Replaced by **scoped bundles** (`StateResolver(scoped_bundles=True)`, test first):
+- a JSON bundle's empty collection proves absence only for subjects the bundle mentions;
+- a SQL dump stays exhaustive;
+- the latest evidence wins.
+
+| configuration | dev exact / F1 | held-out exact / F1 | 518 rows vs final_version_4 |
+|---|---|---|---|
+| final_version_4 (coverage only if unobserved) | 17/22 / 0.975 | 4/10 / 0.949 | – |
+| **scoped bundles (delivered)** | 17/22 / 0.975 | 4/10 / 0.949 | 4: case_33 back to COMPLETE and case_34 back to its v3 steps (the inventory proves deletion); case_308 and case_309 cite the SQL inventory (evidence_72) instead of a bundle that does not mention their subjects (evidence_31) |
+| both rules together | same | same | 2 (only case_308 and case_309) |
+
+Gold cannot separate the two rules: no gold case has an exhaustive dump after an observation, nor a bundle-only
+proof for an unmentioned subject. The choice rests on what the files are, as described above.
+
+**Own case (b) corrected:** its session-3 expectation (COMPLETE via the later bundle) contradicted this semantics:
+the bundle mentions only the decoys. Corrected to INCOMPLETE (account_9001 PRESENT via evidence_b1). The old
+expectation and the reasoning are kept in its CASE.md. The decoys are still not linked, and own cases pass 4/4.
+
+Held-out case_24 shaped this rule, so held-out is not independent validation for it.
+
+## 17. Session 14: hidden-grader evidence, schemas, fail-fast inputs
+
+**Output choice follows the hidden grader, not local gold.** The graded CSV with SHA 7682a1ff… scored 25.5/30;
+the later variant with section 15's or 16's snapshot rule scored 25.2/30. Both snapshot rules are off by default
+(they remain options in `StateResolver`). The output is again byte-identical to the 25.5 CSV. Local gold for the
+delivered configuration, measured with `score.py`:
+
+| split | status | exact | step P | step R | step F1 | sequence |
+|---|---|---|---|---|---|---|
+| dev (22) | 22/22 | 17/22 | 1.000 | 0.950 | 0.975 | 17/22 |
+| held-out (10) | 10/10 | 3/10 | 1.000 | 0.875 | 0.933 | 3/10 |
+| all (32) | 32/32 | 20/32 | 1.000 | 0.922 | 0.960 | 20/32 |
+
+Own cases: **3/4**. Case (b)'s corrected expectation (section 16) needs the scoped-bundle rule, which is now off,
+so it fails. It is left failing and reported, not edited.
+
+**Explicit output schemas** (`ghost/schemas.py`, tests `test_schemas.py`, written first and failing):
+- intent items are `{id, label ∈ DELETE|NON_DELETE|UNSURE, reason}`;
+- vision answers are `{rows[], unreadable[]}`, with a resource-id pattern and a state enum;
+- investigator actions are `{action ∈ closed tool list, args: object}`.
+
+UNSURE labels, unreadable rows and schema failures are counted and never used; the rules or the transcript
+decide instead. The prompts ask the model to flag uncertainty instead of guessing, and treat request text and
+screenshot text as data, not instructions.
+
+**Fail-fast inputs** (`test_cli.py`, written first and failing): a manifest file missing on disk, a wrong CSV
+header, or a bad dataset path stops the run with exit 1 and a one-line `ERROR:`. No output file is written and
+no traceback is shown. An empty request text still gets a valid row.

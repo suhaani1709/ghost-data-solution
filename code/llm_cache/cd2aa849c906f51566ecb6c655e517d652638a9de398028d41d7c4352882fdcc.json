@@ -1,0 +1,12 @@
+{
+ "answer": "{\"thought\": \"Search and support records are tied to the requester by identifiers; verify the account record's evidence before submitting.\", \"action\": \"record_history\", \"args\": {\"system_id\": \"account_service\", \"resource_id\": \"account_4037\"}}",
+ "created_at": "2026-10-25T08:49:42Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "investigate:case_94:4",
+ "usage": {
+  "cache_read_tokens": 957,
+  "completion_tokens": 162,
+  "cost_usd_equivalent": 0.0215077,
+  "prompt_tokens": 5906
+ }
+}

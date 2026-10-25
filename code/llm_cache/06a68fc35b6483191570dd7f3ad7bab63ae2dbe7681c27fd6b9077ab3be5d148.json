@@ -1,0 +1,12 @@
+{
+ "answer": "{\"thought\": \"Check the search_service record's history to confirm it is downstream of the active connector.\", \"action\": \"record_history\", \"args\": {\"system_id\": \"search_service\", \"resource_id\": \"search_459\"}}",
+ "created_at": "2026-10-25T12:31:54Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "investigate:case_49:2",
+ "usage": {
+  "cache_read_tokens": 957,
+  "completion_tokens": 68,
+  "cost_usd_equivalent": 0.0073477,
+  "prompt_tokens": 2601
+ }
+}

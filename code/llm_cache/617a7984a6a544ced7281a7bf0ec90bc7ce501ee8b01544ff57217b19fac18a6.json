@@ -1,0 +1,29 @@
+{
+ "answer": "{\n  \"rows\": [\n    {\n      \"row\": \"1\",\n      \"system_id\": \"export_service\",\n      \"resource_id\": \"export_1261\",\n      \"role\": \"OWN\",\n      \"user_id\": \"\",\n      \"email\": \"marcus.lee@northstar.shop\",\n      \"phone\": \"\",\n      \"state\": \"PRESENT\",\n      \"category\": \"USER_EXPORT\"\n    },\n    {\n      \"row\": \"2\",\n      \"system_id\": \"export_service\",\n      \"resource_id\": \"export_1260\",\n      \"role\": \"OWN\",\n      \"user_id\": \"\",\n      \"email\": \"ingrid.dahl@outlook.com\",\n      \"phone\": \"\",\n      \"state\": \"PRESENT\",\n      \"category\": \"USER_EXPORT\"\n    },\n    {\n      \"row\": \"3\",\n      \"system_id\": \"export_service\",\n      \"resource_id\": \"export_1259\",\n      \"role\": \"OWN\",\n      \"user_id\": \"\",\n      \"email\": \"sara.kim@northstar.shop\",\n      \"phone\": \"\",\n      \"state\": \"PRESENT\",\n      \"category\": \"USER_EXPORT\"\n    },\n    {\n      \"row\": \"4\",\n      \"system_id\": \"export_service\",\n      \"resource_id\": \"export_1258\",\n      \"role\": \"OWN\",\n      \"user_id\": \"\",\n      \"email\": \"daniel.park@northstar.shop\",\n      \"phone\": \"\",\n      \"state\": \"PRESENT\",\n      \"category\": \"USER_EXPORT\"\n    },\n    {\n      \"row\": \"details panel\",\n      \"system_id\": \"export_service\",\n      \"resource_id\": \"export_1260\",\n      \"role\": \"OWN\",\n      \"user_id\": \"\",\n      \"email\": \"ingrid.dahl@outlook.com\",\n      \"phone\": \"\",\n      \"state\": \"PRESENT\",\n      \"category\": \"USER_EXPORT\"\n    }\n  ]\n}",
+ "created_at": "2026-10-24T22:54:20Z",
+ "model": "nvidia/nemotron-3.5-super-vl:free",
+ "purpose": "vision:customer_export_console_20260618.png",
+ "usage": {
+  "completion_tokens": 2379,
+  "completion_tokens_details": {
+   "audio_tokens": 0,
+   "image_tokens": 0,
+   "reasoning_tokens": 1951
+  },
+  "cost": 0,
+  "cost_details": {
+   "upstream_inference_completions_cost": 0,
+   "upstream_inference_cost": 0,
+   "upstream_inference_prompt_cost": 0
+  },
+  "is_byok": false,
+  "prompt_tokens": 2514,
+  "prompt_tokens_details": {
+   "audio_tokens": 0,
+   "cache_write_tokens": 0,
+   "cached_tokens": 0,
+   "video_tokens": 0
+  },
+  "total_tokens": 4893
+ }
+}

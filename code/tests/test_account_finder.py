@@ -47,6 +47,15 @@ class AccountFinderTest(unittest.TestCase):
         self.assertIsNone(find([act("a1", "2026-05-01T12:30:00Z", "account_40")]))   # 30 min after
         self.assertEqual(find([act("a1", "2026-05-01T12:05:00Z", "account_40")]), ("account_40", "a1"))
 
+    def test_windows_are_fallbacks_in_order(self):
+        rows = [act("a1", "2026-05-01T11:00:00Z", "account_40"),     # 60 min before the report
+                act("a2", "2026-05-01T11:50:00Z", "account_41"),     # 10 min before: outside both
+                act("a3", "2026-05-01T12:03:00Z", "account_42")]     # 3 min after: near window only
+        f = account_finder.AccountFinder(frame(), activity(*rows), windows=((76, -39), (6, 6)))
+        self.assertEqual(f.find(IDENT, REPORTED, AUDIT), ("account_40", "a1"))     # first window wins
+        f = account_finder.AccountFinder(frame(), activity(rows[1], rows[2]), windows=((76, -39), (6, 6)))
+        self.assertEqual(f.find(IDENT, REPORTED, AUDIT), ("account_42", "a3"))     # empty first -> next
+
     def test_other_systems_and_operations_ignored(self):
         self.assertIsNone(find([act("a1", "2026-05-01T11:50:00Z", "search_40", target="search_service"),
                                 act("a2", "2026-05-01T11:50:00Z", "account_41", event="UPDATE_RECORD")]))
@@ -86,6 +95,41 @@ class AccountFinderTest(unittest.TestCase):
         self.assertEqual(f.find(IDENT, REPORTED, AUDIT), ("analytics_40", "a1"))
         self.assertFalse(account_finder.needs({("analytics_platform", "analytics_1"): ["f1"]},
                                               "analytics_platform"))
+
+    def test_later_account_dropped_when_one_is_linked_before_audit(self):
+        linked = {("account_service", "account_1"): ["f1"], ("account_service", "account_2"): ["f9"],
+                  ("search_service", "search_1"): ["f9"]}
+        before = {("account_service", "account_1"): ["f1"]}
+        self.assertEqual(sorted(account_finder.one_account(linked, before)),
+                         [("account_service", "account_1"), ("search_service", "search_1")])
+        # no account before audit_at: the later one is the only evidence and stays
+        self.assertEqual(account_finder.one_account(linked, {}), linked)
+
+    def test_reported_status_must_match_the_delete_result(self):
+        rows = [dict(act("a1", "2026-05-01T11:20:00Z", "account_40"), reported_result="FAILED"),
+                dict(act("a2", "2026-05-01T11:30:00Z", "account_41"), reported_result="SUCCESS")]
+        f = account_finder.AccountFinder(frame(), activity(*rows), status_match=True)
+        self.assertEqual(f.find(IDENT, REPORTED, AUDIT, reported_status="COMPLETE"), ("account_41", "a2"))
+        self.assertEqual(f.find(IDENT, REPORTED, AUDIT, reported_status="NOT_STARTED"), ("account_40", "a1"))
+        self.assertIsNone(f.find(IDENT, REPORTED, AUDIT))                     # no status: both survive
+
+    def test_newest_pre_audit_account_wins(self):
+        linked = {("account_service", "account_old"): ["f_mar"], ("account_service", "account_new"): ["f_sep"],
+                  ("search_service", "search_1"): ["f_sep"]}
+        cap = {"f_mar": "2026-03-10T00:00:00Z", "f_sep": "2026-09-15T00:00:00Z"}
+        self.assertEqual(sorted(account_finder.newest_account(linked, linked, cap, "2026-09-15T12:00:00Z")),
+                         [("account_service", "account_new"), ("search_service", "search_1")])
+        before = {("account_service", "account_old"): ["f_mar"]}          # audit in March: only the old one
+        self.assertEqual(sorted(account_finder.newest_account(linked, before, cap, "2026-03-11T00:00:00Z")),
+                         [("account_service", "account_old"), ("search_service", "search_1")])
+
+    def test_status_match_only_in_primary_window_when_configured(self):
+        rows = [dict(act("a1", "2026-05-01T12:03:00Z", "account_40"), reported_result="SUCCESS")]   # +3 min
+        strict = account_finder.AccountFinder(frame(), activity(*rows), windows=((76, -39), (6, 6)), status_match=True)
+        self.assertIsNone(strict.find(IDENT, REPORTED, AUDIT, reported_status="PARTIALLY_COMPLETE"))
+        primary = account_finder.AccountFinder(frame(), activity(*rows), windows=((76, -39), (6, 6)),
+                                               status_match=True, status_windows=1)
+        self.assertEqual(primary.find(IDENT, REPORTED, AUDIT, reported_status="PARTIALLY_COMPLETE"), ("account_40", "a1"))
 
     def test_needs_account_only_when_none_linked(self):
         self.assertTrue(account_finder.needs_account({("search_service", "search_1"): ["f1"]}))

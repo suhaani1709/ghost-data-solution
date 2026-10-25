@@ -120,3 +120,41 @@
 - **Negation table (`intent.NEGATIONS`):** an UNKNOWN text containing an explicit refusal of deletion is NON_DELETE (logged).
   The strict classifier is unchanged; other UNKNOWN text still defaults to DELETE (logged). 518 and sample intents are
   unchanged. Own cases now pass 4/4. The open finding from session 3 is closed.
+
+## After the first submission (2026-10-25, session 7)
+- First submission: Output CSV 7.2/30, Code zip 4.5/30. Causes found: (1) rows were in string order, while
+  `deletion_requests.csv` is numeric, so 0/518 positions matched (fixed: `loaders.case_sort_key`; validate.py
+  checks it); (2) no model in an "AI-powered agent" challenge; (3) incomplete answers on unseen cases (held-out 10/10
+  cases missed a record).
+- **LLM agents (default on, cached):** `ghost/llm.py` is a stdlib OpenRouter client with a SHA-256-keyed response cache in
+  `code/llm_cache/`. `--offline` = cache only; `--no-llm` = rules only. The intent agent agrees with the tables on 375/375
+  known texts and labels the 23 unknown sample texts correctly (23/23 DELETE). The vision agent matches the transcript on
+  5/11 images; all 6 disagreements are model errors (invented identifiers, dropped visible emails, an empty answer), so the
+  transcript is used there. Neither agent changes a 518 row. Tests and evaluation scripts are offline: an early test run
+  made live calls, which wasted free quota.
+- **Ownership from any date (`link_after_audit=True`):** in the samples, the 8 records that only post-audit evidence links
+  are all in gold (0 outside). Ownership and category (`category_any_time`) may come from any date; state and citations
+  only from evidence <= audit_at. A retained record with no state <= audit_at is a future VERIFY_RECORD_PRESENT with ""
+  (INCOMPLETE cases only; `planner.build_steps_unproven`).
+- **Explicit absence (`explicit_absence=True`):** a record's own ABSENT observation (404 lookup) stays the citation even
+  when a later covering snapshot exists. Gold cites the 404 lookup.
+- Final: dev F1 0.953, exact 0.682; held-out F1 0.909, exact 0.100, linkR 0.783; precision unchanged. 518: 152 rows
+  gain records (122 audit, 75 account, ...), 0 removed, 0 status flips.
+- Rejected again with numbers: batching by time around the case's own linked records puts the gold account closest in
+  only 2/11 cases.
+- Held-out is no longer clean: its misses were studied in detail in this session.
+
+## Claude agents and the investigator (2026-10-25, session 8)
+- Backend: Claude Sonnet via Claude Code headless (`llm.ClaudeCodeClient`). Lean flags: --system-prompt, --tools "",
+  --strict-mcp-config with an empty config, --exclude-dynamic-system-prompt-sections, --no-session-persistence, run from
+  an empty temp dir. Overhead is about 650 tokens per call (a default call loads about 109k). Images: the Read tool only,
+  inside a temp dir holding just the image copy. `--bare` is unusable because it needs ANTHROPIC_API_KEY (OAuth is not read).
+- Intent (Claude): 375/375 agree with the tables, 23/23 unknown sample texts correct. Vision (Claude): 10/11 agree; the
+  1 disagreement (backup console REF owner) was checked by viewing and the transcript was kept. The agreement rule was
+  fixed: identifiers outside identities are fine when the transcript has them too (decoys on screen). Free model: 6/11.
+- Investigator: tool-calling loop (JSON actions, 6-turn cap), with merge() guardrails. Pilot on 32 samples: 0 proposals,
+  identical metrics, about 15.7k tokens per case. The 518 run routes flagged cases (category conflict 8 / weak link 39 /
+  no account 222 = 263) by priority with budget 20: 1 proposal (drop a retained audit record), rejected by the guardrail.
+  0 rows change.
+- The Pro session limit was hit once during the pilot (resets after 5 h); all calls are cached, so reruns resume.
+- Final run: 116 Claude calls, 504,201 tokens, $1.59 API-equivalent (Pro subscription, not billed per token).

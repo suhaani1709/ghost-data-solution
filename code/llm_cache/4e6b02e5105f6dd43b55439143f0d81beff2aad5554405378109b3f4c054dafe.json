@@ -1,0 +1,12 @@
+{
+ "answer": "{\"thought\": \"Check the evidence linking the search and support records to the requester, since the request email is a historical-looking look-alike.\", \"action\": \"read_evidence\", \"args\": {\"file_id\": \"evidence_89\"}}",
+ "created_at": "2026-10-25T08:49:28Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "investigate:case_94:1",
+ "usage": {
+  "cache_read_tokens": 957,
+  "completion_tokens": 71,
+  "cost_usd_equivalent": 0.0054617,
+  "prompt_tokens": 2122
+ }
+}

@@ -93,7 +93,7 @@ class EndToEndTest(unittest.TestCase):
             for name, path_env in (("live", os.environ["PATH"]), ("fallback", "/usr/bin:/bin")):
                 out = Path(d) / f"{name}.csv"
                 env = dict(os.environ, PATH=path_env)
-                proc = subprocess.run([sys.executable, str(CODE / "main.py"), "--out", str(out)],
+                proc = subprocess.run([sys.executable, str(CODE / "main.py"), "--offline", "--out", str(out)],
                                       env=env, capture_output=True, text=True, check=True)
                 outs.append((out.read_bytes(), proc.stderr))
             self.assertEqual(outs[0][0], outs[1][0])

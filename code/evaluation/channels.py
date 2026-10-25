@@ -148,7 +148,7 @@ def accounts():
     gold = score.gold_cases()
     _, dev, held = score.split_ids(gold)
     main_mod = score.load_pipeline_module()
-    pipe = main_mod.Pipeline(propagate_accounts=True)
+    pipe = main_mod.Pipeline(propagate_accounts=True, offline=True)
     pool = {c.case_id: c for c in pipe._account_pool(None)}
     gold_acct = {c: [s["resource_id"] for s in gold[c][1] if s["system_id"] == "account_service"][0]
                  for c in gold}

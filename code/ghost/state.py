@@ -6,7 +6,10 @@ resource's system without the resource (a coverage row: resource_id "" and
 the same system_id) -> ABSENT, cited to that snapshot. Within the chosen
 file, any copy showing the data wins (replica drift: one PRESENT copy means
 PRESENT); the same holds across files of the same captured_at. On a tie in
-captured_at, a real observation beats a coverage row.
+captured_at, a real observation beats a coverage row. explicit_absence=True: when
+the resource's own latest observation already says ABSENT (e.g. a 404 lookup of that
+id), a later covering snapshot does not replace it as the citation (the state is
+ABSENT either way; the resource-specific proof is cited).
 
 Replica drift (replica_persist="drift", default): when the latest file that
 captures a replica copy of the system (<= audit_at) holds the resource in a
@@ -18,7 +21,8 @@ of the system without the row, or with it compliant, ends this.
 "any" drops the primary-side condition; "off" disables the rule.
 
 Category = the most common non-empty category_hint of the resource's
-observations up to audit_at. Without a hint, the treatment operation the
+observations up to audit_at (category_any_time=True: when none exists up to
+audit_at, the hints of any capture time; a record's type does not change). Without a hint, the treatment operation the
 deletion workflow ran on the resource (DELETE_RECORD / REDACT_RECORD /
 ANONYMIZE_RECORD activity rows, event_time <= audit_at; the reported result
 is ignored) picks the category, among those the system is seen to hold,
@@ -29,7 +33,10 @@ planner_state() maps the observation vocabulary onto the planner's
 (IDENTIFIABLE -> PRESENT, ...); impossible combinations are coerced to the
 compliant state and counted.
 """
+from __future__ import annotations
+
 from collections import Counter, namedtuple
+from typing import Optional
 
 import pandas as pd
 
@@ -57,13 +64,25 @@ CATEGORY_BY_SYSTEM = {
 }
 
 
-def _ts(value):
+def _ts(value) -> pd.Timestamp:
     t = pd.Timestamp(value)
     return t.tz_localize("UTC") if t.tzinfo is None else t
 
 
 class StateResolver:
-    def __init__(self, obs, replica_persist="drift", activity=None, actions=None):
+    def __init__(self, obs, replica_persist="drift", activity=None, actions=None,
+                 explicit_absence=False, category_any_time=False, coverage_only_if_unobserved=False,
+                 scoped_bundles=False):
+        # scoped_bundles: a JSON records-assurance bundle holds only a few subjects' records, so its
+        # empty collection proves absence only for subjects the bundle mentions; a SQL dump of a table
+        # (snapshot_scope / inventory table) is exhaustive for its system and proves absence for anyone.
+        self.scoped_bundles = scoped_bundles
+        self.explicit_absence = explicit_absence
+        # A covering snapshot that merely lacks the row proves absence only for a record with no
+        # stateful observation of its own up to audit_at (the gold answers never let a blanket
+        # snapshot override a record's own explicit observation).
+        self.coverage_only_if_unobserved = coverage_only_if_unobserved
+        self.category_any_time = category_any_time
         if replica_persist not in REPLICA_PERSIST:
             raise ValueError(f"replica_persist must be one of {REPLICA_PERSIST}")
         self.replica_persist = replica_persist
@@ -75,6 +94,9 @@ class StateResolver:
         cover = obs[(obs.resource_id == "") & (obs.system_id != "")
                     & obs.file_kind.isin(COVERAGE_KINDS)]
         self._coverage = {k: g.drop_duplicates("file_id") for k, g in cover.groupby("system_id")}
+        self._file_tokens = {}      # json file_id -> every identifier token any of its units carries
+        for f, ident in zip(obs.file_id[obs.file_kind == "json"], obs.identifiers[obs.file_kind == "json"]):
+            self._file_tokens.setdefault(f, set()).update(v for vs in ident.values() for v in vs)
         self._files_of = {k: set(g.file_id) for k, g in hinted.groupby(["system_id", "resource_id"])}
         self.fallbacks = 0
         self.fallback_log = Counter()
@@ -99,7 +121,8 @@ class StateResolver:
         self._replica_files = {k: g.drop_duplicates("file_id")[["file_id", "_t"]]
                                for k, g in rep.groupby("system_id")}
 
-    def resolve(self, system_id, resource_id, audit_at, allow_absence=True):
+    def resolve(self, system_id: str, resource_id: str, audit_at: str, allow_absence: bool = True,
+                subject: Optional[set] = None) -> Optional[ResourceState]:
         """ResourceState at audit_at, or None when nothing stateful is known.
 
         allow_absence=False ignores coverage rows (used for retained records:
@@ -117,12 +140,19 @@ class StateResolver:
                                                               if r.state in SEVERITY else 99))
                 best = ResourceState(pick.state, pick.file_id, pick.copy)
         cover = self._coverage.get(system_id) if allow_absence else None
+        if self.coverage_only_if_unobserved and best is not None:
+            cover = None
         if cover is not None:
             seen = self._files_of.get((system_id, resource_id), set())
             cover = cover[(cover._t <= cutoff) & ~cover.file_id.isin(seen)]
+            if self.scoped_bundles:
+                tokens = subject or set()
+                cover = cover[[k != "json" or bool(self._file_tokens.get(f, set()) & tokens)
+                               for k, f in zip(cover.file_kind, cover.file_id)]]
             if len(cover):
                 t = cover._t.max()
-                if best_t is None or t > best_t:
+                keep = self.explicit_absence and best is not None and best.state == "ABSENT"
+                if (best_t is None or t > best_t) and not keep:
                     f = cover[cover._t == t].sort_values("file_id").iloc[0]
                     best = ResourceState("ABSENT", f.file_id, f.copy)
                     best_t = t
@@ -154,10 +184,13 @@ class StateResolver:
             return t, ResourceState("PRESENT", f, "replica")
         return None
 
-    def category(self, system_id, resource_id, audit_at):
+    def category(self, system_id: str, resource_id: str, audit_at: str) -> str:
         rows = self._hints.get((system_id, resource_id))
         if rows is not None:
-            rows = rows[(rows._t <= _ts(audit_at)) & (rows.category_hint != "")]
+            hinted = rows[rows.category_hint != ""]
+            rows = hinted[hinted._t <= _ts(audit_at)]
+            if not len(rows) and self.category_any_time:
+                rows = hinted    # a record's type is static: a later hint is better than a guess
             if len(rows):
                 counts = Counter(rows.category_hint)
                 latest = rows.sort_values("_t").category_hint.iloc[-1]
@@ -177,7 +210,7 @@ class StateResolver:
         return CATEGORY_BY_SYSTEM.get(system_id, "")
 
 
-def planner_state(category, raw_state, treatments, coercions=None):
+def planner_state(category: str, raw_state: str, treatments: dict, coercions: Optional[Counter] = None) -> str:
     """Observation state -> the planner's state for this category's treatment."""
     t = treatments[category]
     compliant = planner.STATE_OF[t.verification]

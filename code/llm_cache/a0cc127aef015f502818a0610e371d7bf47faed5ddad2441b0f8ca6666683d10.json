@@ -1,0 +1,12 @@
+{
+ "answer": "{\"thought\": \"The audit log is ABSENT at audit time per history; check the support message record next.\", \"action\": \"record_history\", \"args\": {\"system_id\": \"support_platform\", \"resource_id\": \"support_9746\"}}",
+ "created_at": "2026-10-25T12:34:04Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "investigate:case_76:2",
+ "usage": {
+  "cache_read_tokens": 957,
+  "completion_tokens": 70,
+  "cost_usd_equivalent": 0.006999699999999999,
+  "prompt_tokens": 2509
+ }
+}

@@ -20,8 +20,11 @@ The same finder runs for another system and worker operation by parameter
 "same-batch" idea). Only the account rule (one per case) is backed by every
 sample; other systems must be measured before use.
 """
+from __future__ import annotations
+
 import re
 from collections import namedtuple
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -30,25 +33,65 @@ from . import linking
 NUMBER = re.compile(r"_(\d+)$")
 
 
-def needs(linked, system):
+STATUS_RESULT = {"COMPLETE": "SUCCESS", "PARTIALLY_COMPLETE": "PARTIAL", "NOT_STARTED": "FAILED"}
+
+
+def newest_account(linked: dict, linked_before_audit: dict, captured: dict[str, str], audit_at: str) -> dict:
+    """Every case has exactly one account (gold 32/32). When evidence links several accounts to the
+    subject, keep the account whose linking evidence (captured <= audit_at) is newest: a user who
+    deleted an old account and later signed up again is audited on the account current at audit_at.
+    If no account is linked before audit_at, the newest any-date link is kept. Other records untouched."""
+    accounts = [k for k in linked if k[0] == "account_service"]
+    if len(accounts) < 2:
+        return linked
+    def newest(k, pre):
+        times = [captured.get(f, "") for f in linked.get(k, []) if f in captured]
+        times = [t for t in times if t <= audit_at] if pre else times
+        return max(times, default="")
+    pre = [k for k in accounts if k in linked_before_audit]
+    pool = pre or accounts
+    keep = max(pool, key=lambda k: (newest(k, bool(pre)), k[1]))
+    return {k: v for k, v in linked.items() if k[0] != "account_service" or k == keep}
+
+
+def needs(linked: dict, system: str) -> bool:
     """True when linking found no resource of this system."""
     return not any(s == system for s, _ in linked)
 
 
-def needs_account(linked):
+def one_account(linked: dict, linked_before_audit: dict) -> dict:
+    """Every case has one account (gold 32/32). When evidence up to audit_at already links an
+    account, accounts linked only by later evidence (e.g. a new sign-up after the deletion) are
+    not this case's record and are removed. Other records are untouched."""
+    early = {k for k in linked_before_audit if k[0] == "account_service"}
+    if not early:
+        return linked
+    return {k: v for k, v in linked.items() if k[0] != "account_service" or k in early}
+
+
+def needs_account(linked: dict) -> bool:
     return needs(linked, "account_service")
 
 
-def _number(resource_id):
+def _number(resource_id: str) -> Optional[int]:
     m = NUMBER.search(resource_id)
     return int(m.group(1)) if m else None
 
 
 class AccountFinder:
     def __init__(self, obs, activity, before_min=75, after_min=10, system="account_service",
-                 events=("DELETE_RECORD",)):
-        self.before = pd.Timedelta(minutes=before_min)
-        self.after = pd.Timedelta(minutes=after_min)
+                 events=("DELETE_RECORD",), windows=None, status_match=False, status_windows=None):
+        # status_windows=N: apply the status match only in the first N windows (None = all).
+        self.status_windows = status_windows
+        # status_match: the delete event's reported_result must match the request's
+        # reported_status (COMPLETE~SUCCESS, PARTIALLY_COMPLETE~PARTIAL, NOT_STARTED~FAILED;
+        # 256 of 261 labelled pairs agree). Requests without a status are not filtered.
+        self.status_match = status_match
+        # windows: ((minutes before reported_at, minutes after reported_at), ...), tried in order: the
+        # first window holding any surviving candidate decides. A negative "after" ends the window
+        # before reported_at. Default: the single window (before_min, after_min).
+        self.windows = [(pd.Timedelta(minutes=b), pd.Timedelta(minutes=a))
+                        for b, a in (windows or ((before_min, after_min),))]
         d = activity[activity.event_type.isin(events) & (activity.target_system == system)]
         self._deletes = d.assign(_t=pd.to_datetime(d.event_time, utc=True)).sort_values(
             ["_t", "activity_id"])
@@ -64,15 +107,29 @@ class AccountFinder:
     def _tied_elsewhere(self, resource_id, mine, cutoff):
         return any(t <= cutoff and tokens - mine for t, tokens in self._tokens.get(resource_id, ()))
 
-    def survivors(self, ident, reported_at, audit_at, taken=None):
+    def survivors(self, ident: Any, reported_at: str, audit_at: str, taken: Optional[dict[str, str]] = None,
+                  reported_status: Optional[str] = None) -> dict[str, tuple[str, float]]:
         """{resource_id: (activity_id of its first delete row in the window, minutes from
         reported_at of its closest one)} after removing accounts tied elsewhere and accounts
         that `taken` ({resource_id: user_id}) assigns to another user."""
         reported, cutoff = pd.Timestamp(reported_at), pd.Timestamp(audit_at)
-        d = self._deletes
-        d = d[(d._t >= reported - self.before) & (d._t <= reported + self.after) & (d._t <= cutoff)]
         mine = linking.user_tokens(ident)
         taken = taken or {}
+        out = {}
+        for i, (before, after) in enumerate(self.windows):
+            use_status = self.status_windows is None or i < self.status_windows
+            out = self._window(ident, reported, cutoff, before, after, mine, taken,
+                               reported_status if use_status else None)
+            if out:
+                break
+        return out
+
+    def _window(self, ident, reported, cutoff, before, after, mine, taken, reported_status=None):
+        d = self._deletes
+        d = d[(d._t >= reported - before) & (d._t <= reported + after) & (d._t <= cutoff)]
+        want = STATUS_RESULT.get(reported_status) if self.status_match else None
+        if want is not None:
+            d = d[d.reported_result == want]
         out = {}
         for rid, aid, t in zip(d.resource_id, d.activity_id, d._t):
             if taken.get(rid, ident.user_id) != ident.user_id:
@@ -85,7 +142,7 @@ class AccountFinder:
         return out
 
     @staticmethod
-    def decide(survivors, user_id):
+    def decide(survivors: dict[str, tuple[str, float]], user_id: str) -> Optional[tuple[str, str]]:
         """The one survivor, else the one survivor with the user's number, else None."""
         if len(survivors) > 1:
             n = _number(user_id)
@@ -96,22 +153,25 @@ class AccountFinder:
         return rid, aid
 
     @staticmethod
-    def rank(survivors, user_id):
+    def rank(survivors: dict[str, tuple[str, float]], user_id: str) -> list[tuple[str, float]]:
         """[(resource_id, minutes from reported_at)], closest first, then the user-number
         pattern, then resource_id. Measurement only (forced pick, not used by the pipeline)."""
         n = _number(user_id)
         return [(r, m) for r, (_, m) in sorted(
             survivors.items(), key=lambda kv: (kv[1][1], _number(kv[0]) != n, kv[0]))]
 
-    def find(self, ident, reported_at, audit_at):
+    def find(self, ident: Any, reported_at: str, audit_at: str,
+             reported_status: Optional[str] = None) -> Optional[tuple[str, str]]:
         """(resource_id, activity_id of its delete row) or None."""
-        return self.decide(self.survivors(ident, reported_at, audit_at), ident.user_id)
+        return self.decide(self.survivors(ident, reported_at, audit_at, reported_status=reported_status),
+                           ident.user_id)
 
 
-PoolCase = namedtuple("PoolCase", "case_id ident reported_at audit_at account")
+PoolCase = namedtuple("PoolCase", "case_id ident reported_at audit_at account reported_status",
+                      defaults=(None,))
 
 
-def propagate(cases, finder):
+def propagate(cases: list[PoolCase], finder: AccountFinder) -> tuple[dict[str, tuple[str, str]], list[dict]]:
     """Constraint propagation over every known request (PoolCase rows).
 
     An account belongs to exactly one user. Accounts that evidence links to a case's
@@ -133,8 +193,8 @@ def propagate(cases, finder):
         for c in pending:
             if c.case_id in picks:
                 continue
-            pick = finder.decide(finder.survivors(c.ident, c.reported_at, c.audit_at, owner),
-                                 c.ident.user_id)
+            pick = finder.decide(finder.survivors(c.ident, c.reported_at, c.audit_at, owner,
+                                                  c.reported_status), c.ident.user_id)
             if pick is not None:
                 decided[c.case_id] = (c.ident.user_id, pick)
         users = {}

@@ -1,0 +1,29 @@
+{
+ "answer": "{\"rows\": [{\"row\": \"header\", \"system_id\": \"support_platform\", \"resource_id\": \"support_1034\", \"role\": \"OWN\", \"user_id\": \"\", \"email\": \"\", \"phone\": \"\", \"state\": \"PRESENT\", \"category\": \"SUPPORT_MESSAGE\"}]}",
+ "created_at": "2026-10-24T22:56:36Z",
+ "model": "nvidia/nemotron-3.5-super-vl:free",
+ "purpose": "vision:support_ticket_console_20260524.png",
+ "usage": {
+  "completion_tokens": 1965,
+  "completion_tokens_details": {
+   "audio_tokens": 0,
+   "image_tokens": 0,
+   "reasoning_tokens": 1896
+  },
+  "cost": 0,
+  "cost_details": {
+   "upstream_inference_completions_cost": 0,
+   "upstream_inference_cost": 0,
+   "upstream_inference_prompt_cost": 0
+  },
+  "is_byok": false,
+  "prompt_tokens": 2685,
+  "prompt_tokens_details": {
+   "audio_tokens": 0,
+   "cache_write_tokens": 0,
+   "cached_tokens": 0,
+   "video_tokens": 0
+  },
+  "total_tokens": 4650
+ }
+}

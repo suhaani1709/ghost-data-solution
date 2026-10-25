@@ -1,0 +1,12 @@
+{
+ "answer": "[{\"id\":1,\"label\":\"DELETE\"},{\"id\":2,\"label\":\"DELETE\"},{\"id\":3,\"label\":\"DELETE\"},{\"id\":4,\"label\":\"DELETE\"},{\"id\":5,\"label\":\"DELETE\"},{\"id\":6,\"label\":\"DELETE\"},{\"id\":7,\"label\":\"DELETE\"},{\"id\":8,\"label\":\"DELETE\"},{\"id\":9,\"label\":\"DELETE\"},{\"id\":10,\"label\":\"DELETE\"},{\"id\":11,\"label\":\"DELETE\"},{\"id\":12,\"label\":\"DELETE\"},{\"id\":13,\"label\":\"DELETE\"},{\"id\":14,\"label\":\"DELETE\"},{\"id\":15,\"label\":\"DELETE\"},{\"id\":16,\"label\":\"DELETE\"},{\"id\":17,\"label\":\"DELETE\"},{\"id\":18,\"label\":\"DELETE\"},{\"id\":19,\"label\":\"DELETE\"},{\"id\":20,\"label\":\"DELETE\"},{\"id\":21,\"label\":\"DELETE\"},{\"id\":22,\"label\":\"DELETE\"},{\"id\":23,\"label\":\"DELETE\"},{\"id\":24,\"label\":\"DELETE\"},{\"id\":25,\"label\":\"DELETE\"},{\"id\":26,\"label\":\"DELETE\"},{\"id\":27,\"label\":\"DELETE\"},{\"id\":28,\"label\":\"DELETE\"},{\"id\":29,\"label\":\"DELETE\"},{\"id\":30,\"label\":\"DELETE\"},{\"id\":31,\"label\":\"DELETE\"},{\"id\":32,\"label\":\"DELETE\"},{\"id\":33,\"label\":\"DELETE\"},{\"id\":34,\"label\":\"DELETE\"},{\"id\":35,\"label\":\"DELETE\"},{\"id\":36,\"label\":\"DELETE\"},{\"id\":37,\"label\":\"DELETE\"},{\"id\":38,\"label\":\"DELETE\"},{\"id\":39,\"label\":\"DELETE\"},{\"id\":40,\"label\":\"DELETE\"},{\"id\":41,\"label\":\"DELETE\"},{\"id\":42,\"label\":\"DELETE\"},{\"id\":43,\"label\":\"DELETE\"},{\"id\":44,\"label\":\"DELETE\"},{\"id\":45,\"label\":\"DELETE\"},{\"id\":46,\"label\":\"DELETE\"},{\"id\":47,\"label\":\"DELETE\"},{\"id\":48,\"label\":\"DELETE\"},{\"id\":49,\"label\":\"DELETE\"},{\"id\":50,\"label\":\"DELETE\"}]",
+ "created_at": "2026-10-25T12:31:11Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "intent",
+ "usage": {
+  "cache_read_tokens": 535,
+  "completion_tokens": 804,
+  "cost_usd_equivalent": 0.0210615,
+  "prompt_tokens": 3778
+ }
+}

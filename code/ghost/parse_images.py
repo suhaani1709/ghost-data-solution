@@ -87,9 +87,16 @@ def row_to_unit(row):
     return unit
 
 
-def parse_image(path):
-    """Units for one PNG, from the transcript (none if it is not transcribed)."""
-    return [row_to_unit(r) for r in _transcript().get(Path(path).name, []) if r["resource_id"]]
+def transcript():
+    """{file name: rows} of the development transcript (a copy)."""
+    return {k: [dict(r) for r in v] for k, v in _transcript().items()}
+
+
+def parse_image(path, rows=None):
+    """Units for one PNG: from `rows` (e.g. the vision agent's reading) when given, else from
+    the transcript (none if it is not transcribed)."""
+    rows = _transcript().get(Path(path).name, []) if rows is None else rows
+    return [row_to_unit(r) for r in rows if r["resource_id"]]
 
 
 def validate(transcript, emails, phones, user_ids):

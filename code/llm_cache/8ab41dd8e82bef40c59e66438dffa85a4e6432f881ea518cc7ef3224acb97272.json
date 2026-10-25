@@ -1,0 +1,12 @@
+{
+ "answer": "{\"rows\": [], \"unreadable\": []}",
+ "created_at": "2026-10-25T12:29:45Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "vision:deleted_account_reference_20260310.png",
+ "usage": {
+  "cache_read_tokens": 4539,
+  "completion_tokens": 208,
+  "cost_usd_equivalent": 0.0160259,
+  "prompt_tokens": 7914
+ }
+}

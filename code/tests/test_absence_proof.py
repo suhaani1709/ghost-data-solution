@@ -106,6 +106,49 @@ class AbsenceProofStateTest(unittest.TestCase):
         st = self.resolve(cover("f2", "2026-02-01T00:00:00Z"))
         self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f2"))
 
+    def test_explicit_absence_is_cited_over_a_later_covering_snapshot(self):
+        rows = (obs("f1", "2026-01-01T00:00:00Z", "account_service", "account_2", "ABSENT"),
+                cover("f2", "2026-02-01T00:00:00Z"))
+        st = state.StateResolver(frame(*rows), explicit_absence=True).resolve(
+            "account_service", "account_2", self.AUDIT)
+        self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f1"))
+        st = state.StateResolver(frame(*rows), explicit_absence=False).resolve(
+            "account_service", "account_2", self.AUDIT)
+        self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f2"))
+
+    def test_explicit_absence_rule_never_keeps_a_present_record(self):
+        st = state.StateResolver(frame(
+            obs("f1", "2026-01-01T00:00:00Z", "account_service", "account_2", "PRESENT"),
+            cover("f2", "2026-02-01T00:00:00Z")), explicit_absence=True).resolve(
+            "account_service", "account_2", self.AUDIT)
+        self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f2"))
+
+    def test_blanket_snapshot_does_not_override_an_own_observation(self):
+        rows = (obs("f1", "2026-01-01T00:00:00Z", "account_service", "account_2", "PRESENT"),
+                cover("f2", "2026-02-01T00:00:00Z"))
+        st = state.StateResolver(frame(*rows), coverage_only_if_unobserved=True).resolve(
+            "account_service", "account_2", self.AUDIT)
+        self.assertEqual((st.state, st.evidence_id), ("PRESENT", "f1"))
+        st = state.StateResolver(frame(cover("f2", "2026-02-01T00:00:00Z")),
+                                 coverage_only_if_unobserved=True).resolve("account_service", "account_2", self.AUDIT)
+        self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f2"))      # never observed: coverage proves absence
+
+    def test_json_bundle_proves_absence_only_for_subjects_it_covers(self):
+        from test_linking_state import ids
+        bundle = obs("f2", "2026-02-01T00:00:00Z", "account_service", "", "", category="USER_PROFILE", kind="json")
+        other = obs("f2", "2026-02-01T00:00:00Z", "identity_service", "tombstone_1", "REDACTED",
+                    identifiers=ids(user_ids=["user_5"]), kind="json")
+        res = state.StateResolver(frame(bundle, other), scoped_bundles=True)
+        self.assertIsNone(res.resolve("account_service", "account_2", self.AUDIT, subject={"user_7"}))
+        self.assertEqual(res.resolve("account_service", "account_2", self.AUDIT, subject={"user_5"}).state, "ABSENT")
+
+    def test_sql_dump_is_exhaustive_and_overrides_an_earlier_observation(self):
+        rows = (obs("f1", "2026-01-01T00:00:00Z", "account_service", "account_2", "PRESENT"),
+                cover("f2", "2026-02-01T00:00:00Z"))
+        st = state.StateResolver(frame(*rows), scoped_bundles=True).resolve(
+            "account_service", "account_2", self.AUDIT, subject={"user_7"})
+        self.assertEqual((st.state, st.evidence_id), ("ABSENT", "f2"))
+
     def test_absence_proof_can_be_disabled_for_retained_records(self):
         df = frame(
             obs("f1", "2026-01-01T00:00:00Z", "security_service", "audit_record_1", "PRESENT"),

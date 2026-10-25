@@ -1,0 +1,12 @@
+{
+ "answer": "{\"thought\": \"The audit record is ABSENT at audit time per evidence_87 (no units though); check the search record and support message next.\", \"action\": \"record_history\", \"args\": {\"system_id\": \"search_service\", \"resource_id\": \"search_8295\"}}",
+ "created_at": "2026-10-25T08:49:07Z",
+ "model": "claude-sonnet-5-5",
+ "purpose": "investigate:case_78:3",
+ "usage": {
+  "cache_read_tokens": 957,
+  "completion_tokens": 80,
+  "cost_usd_equivalent": 0.0084997,
+  "prompt_tokens": 2859
+ }
+}
